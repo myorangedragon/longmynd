@@ -1,0 +1,56 @@
+.TH LONGMYND 1
+.SH NAME
+longmynd \- Outputs transport streams from the Minitiouner DVB-S/S2 demodulator
+.SH SYNOPSIS
+.B longmynd \fR[\fB\-u\fR \fIUSB_BUS USB_DEVICE\fR]
+         [\fB\-i\fR \fIMAIN_IP_ADDR\fR  \fIMAIN_PORT\fR | \fB\-t\fR \fIMAIN_TS_FIFO\fR]
+         [\fB\-s\fR \fIMAIN_STATUS_FIFO\fR]
+         [\fB\-w\fR]
+      \fIMAIN_FREQ\fR \fIMAIN_SR\fR
+.IR 
+.SH DESCRIPTION
+.B longmynd
+Interfaces to the Minitiouner hardware to search for and demodulate a DVB-S or DVB-S2 stream. This stream can be output either to a local FIFO (using the default or -t option) or to an IP address/port via UDP.
+
+The Main TS stream is the one coming out of the Primary FTDI Board.
+.SH OPTIONS
+.TP
+.BR \-u " " \fIUSB_BUS\fR " " \fIUSB_DEVICE\fR
+Sets the USB Bus and USB Device Number of the required Minitiouner in a multi device system.
+Default uses the first detected Minitiouner.
+.TP
+.BR \-i " " \fIIP_ADDR\fR " " \fIPORT\fR
+If UDP output is required (instead of the default FIFO output), this option sets the IP Address and Port to send the Main TS Stream to.
+Default is to use a FIFO for Main TS Stream.
+.TP
+.BR \-t " " \fITS_FIFO\fR
+Sets the name of the Main TS Stream output FIFO.
+Default is "./longmynd_main_ts".
+.TP
+.BR \-s " " \fISTATUS_FIFO\fR
+Sets the name of the Status output FIFO.
+Default is "./longmynd_main_status".
+.TP
+.BR \-w
+If selected, this option swaps over the RF input so that the Main TS Stream is fed from the BOTTOM F-Type of the NIM.
+Default uses the TOP RF input for the Main TS stream.
+.TP
+.BR \fIMAIN_FREQ\fR
+specifies the starting frequency (in KHz) of the Main TS Stream search algorithm".
+.TP
+.BR \fIMAIN_SR\fR
+specifies the starting Symbol Rate (in KSPS) of the Main TS Stream search algorithm".
+
+.SH EXAMPLES
+.TP
+longmynd 2000 2000
+will find the first available Minitiouner, search for a 2MHz TS Stream at 2MSPS on the TOP RF input, output the TS to a FIFO called "longmynd_main_ts" and the status to a FIFO called "longmynd_main_status".
+.TP
+longmynd -w 2000 2000
+As above but uses the BOTTOM RF input.
+.TP
+longmynd -u 1 4 2000 2000
+As above but will attempt to find a minitiouner at usb device 4 on usb bus 1.
+.TP
+longmynd -i 192.168.1.1 87 2000 2000
+As above but any TS output will be to IP address 192.168.1.1 on port 87
