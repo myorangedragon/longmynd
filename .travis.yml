@@ -1,0 +1,18 @@
+## Travis CI Configuration file
+
+# Use barebones Travis image
+language: c
+
+# Install dependencies
+before_install:
+  - sudo apt install libusb-1.0-0-dev
+addons:
+  apt:
+    update: true
+
+# Only grab latest git commit (no need for history)
+git:
+  depth: 1
+
+script:
+  - make
