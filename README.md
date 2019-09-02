@@ -14,7 +14,8 @@ Copyright 2019 Heather Lomond
 
 ## Run
 
-_todo_
+    Please refer to the longmynd manual page via:
+         man -l longmynd.1
 
 ## License
 
