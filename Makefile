@@ -3,7 +3,8 @@ SRC = main.c nim.c ftdi.c stv0910.c stv0910_utils.c stvvglna.c stvvglna_utils.c 
 OBJ = ${SRC:.c=.o}
 
 CC = gcc
-CFLAGS += -Wall -lusb-1.0 -Wextra -Wunused -DVERSION=\"${VER}\"
+CFLAGS += -Wall -Wextra -Wunused -DVERSION=\"${VER}\"
+LDFLAGS += -lusb-1.0
 
 all: ${BIN} fake_read
 
