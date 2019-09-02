@@ -5,7 +5,10 @@ OBJ = ${SRC:.c=.o}
 CC = gcc
 CFLAGS += -Wall -lusb-1.0 -Wextra -Wunused -DVERSION=\"${VER}\"
 
-all: ${BIN}
+all: ${BIN} fake_read
+
+fake_read:
+	@${CC} fake_read.c -o $@
 
 $(BIN): ${OBJ}
 	@echo "  LD     "$@
@@ -16,7 +19,7 @@ $(BIN): ${OBJ}
 	@${CC} ${CFLAGS} -c -fPIC -o $@ $<
 
 clean:
-	@rm -rf ${BIN} ${OBJ}
+	@rm -rf ${BIN} fake_read ${OBJ}
 
 tags:
 	@ctags *
