@@ -335,7 +335,8 @@ int main(int argc, char *argv[]) {
                     /* we turn on the LNA we want and turn the other off (if they exist) */
                     if (err==ERROR_NONE) err=stvvglna_init(NIM_INPUT_TOP,    (swap) ? STVVGLNA_OFF : STVVGLNA_ON,  &lna_ok);
                     if (err==ERROR_NONE) err=stvvglna_init(NIM_INPUT_BOTTOM, (swap) ? STVVGLNA_ON  : STVVGLNA_OFF, &lna_ok);
-                    if (err!=ERROR_NONE) printf("ERROR: failed to init a device\n");
+
+                    if (err!=ERROR_NONE) printf("ERROR: failed to init a device - is the NIM powered on?\n");
 
                     /* now start the whole thing scanning for the signal */
                     if (err==ERROR_NONE) {
