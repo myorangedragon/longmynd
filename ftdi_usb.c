@@ -286,7 +286,7 @@ uint8_t ftdi_usb_init(uint8_t usb_bus, uint8_t usb_addr, uint16_t vid, uint16_t 
         if ((err==ERROR_NONE) && (usb_device_count==count)) {
             printf("ERROR: invalid USB bus/device number\n");
             err=ERROR_FTDI_USB_BAD_DEVICE_NUM;
-        } else {
+        } else if(err==ERROR_NONE) {
 
             /* now we check our one has the right VID and PID */
             usb_candidate_device=usb_device_list[usb_device_count];
