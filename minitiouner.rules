@@ -1,0 +1,5 @@
+# Install with `sudo cp minitiouner.rules /etc/udev/rules.d/`
+#  then unplug and replug the minitiouner
+
+# Minitiouner uses FT2232H/D default VID/PID, but it's own product string.
+SUBSYSTEMS=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6010", ATTRS{product}=="USB <-> NIM tuner", MODE:="0666"
