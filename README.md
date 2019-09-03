@@ -18,12 +18,17 @@ Copyright 2019 Heather Lomond
          man -l longmynd.1
 ## Output
 
-    The status fifo is filled with status information as and when it becomes available. The format of the status information is:
+    The status fifo is filled with status information as and when it becomes available.
+    The format of the status information is:
+    
          $n,m<cr>
+	 
     Where:
          n = identifier integer of Status message
          m = integer value associated with this status message
   
+    And the values of n and m are defined as:
+    
     ID	Meaning 	        Value and Units
     ==============================================================================================
     1	State		 	    0: initialising
