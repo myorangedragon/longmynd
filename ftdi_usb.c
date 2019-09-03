@@ -239,7 +239,6 @@ uint8_t ftdi_usb_init(uint8_t usb_bus, uint8_t usb_addr, uint16_t vid, uint16_t 
 /* return : error code                                                                                */
 /* -------------------------------------------------------------------------------------------------- */
     uint8_t err=ERROR_NONE;
-    int ret;
     ssize_t count;
     libusb_device **usb_device_list;
     int error_code;
@@ -310,27 +309,24 @@ uint8_t ftdi_usb_init(uint8_t usb_bus, uint8_t usb_addr, uint16_t vid, uint16_t 
         /* importantly, we now free up the list */
         libusb_free_device_list(usb_device_list, 1);
     }
-    /* now we should have the device handle of the device we are going to us */
-    /* we have two interfaces on the ftdi device (0 and 1) */
-    /* so next we make sure we are the only people using this device and this */
-    if (libusb_kernel_driver_active(usb_device_handle, 0)) libusb_detach_kernel_driver(usb_device_handle, 0);
-    if (libusb_kernel_driver_active(usb_device_handle, 1)) libusb_detach_kernel_driver(usb_device_handle, 1);
 
-    /* finally we claim both interfaces as ours */
-    if ((ret=libusb_claim_interface(usb_device_handle, 0))<0) {
-        libusb_close(usb_device_handle);
-        libusb_exit(usb_context);
-    	printf("ERROR: Unable to claim interface\n");
-        return ERROR_FTDI_USB_CLAIM;
-    }
-    if ((ret=libusb_claim_interface(usb_device_handle, 1))<0) {
-        libusb_close(usb_device_handle);
-        libusb_exit(usb_context);
-    	printf("ERROR: Unable to claim interface\n");
-        return ERROR_FTDI_USB_CLAIM;
+    if (err==ERROR_NONE) {
+        /* now we should have the device handle of the device we are going to us */
+        /* we have two interfaces on the ftdi device (0 and 1) */
+        /* so next we make sure we are the only people using this device and this */
+        if (libusb_kernel_driver_active(usb_device_handle, 0)) libusb_detach_kernel_driver(usb_device_handle, 0);
+        if (libusb_kernel_driver_active(usb_device_handle, 1)) libusb_detach_kernel_driver(usb_device_handle, 1);
+
+        /* finally we claim both interfaces as ours */
+        if (libusb_claim_interface(usb_device_handle, 0)<0 || libusb_claim_interface(usb_device_handle, 1)<0) {
+            libusb_close(usb_device_handle);
+            libusb_exit(usb_context);
+        	printf("ERROR: Unable to claim interface\n");
+            err=ERROR_FTDI_USB_CLAIM;
+        }
     }
 
-    return ERROR_NONE;
+    return err;
 }
 
 /* -------------------------------------------------------------------------------------------------- */
