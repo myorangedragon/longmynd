@@ -144,9 +144,9 @@ uint8_t process_command_line(int argc, char *argv[],
         param++;
     }
 
-    if (argc<3) {
+    if ((argc-param)<2) {
         err=ERROR_ARGS_INPUT;
-        printf("ERROR: Main Frequency and Main Symbol Rate missing.\n");
+        printf("ERROR: Main Frequency and Main Symbol Rate not found.\n");
     }
 
     if (err==ERROR_NONE) {
