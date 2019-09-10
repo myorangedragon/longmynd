@@ -282,7 +282,7 @@ typedef struct {
 
 void *loop_ts(void *arg){
     loop_ts_vars_t *loop_ts_vars=(loop_ts_vars_t *)arg;
-    uint8_t err;
+    uint8_t err=ERROR_NONE;
     uint16_t len=0;
 
     while(err == ERROR_NONE && *loop_ts_vars->main_err_ptr == ERROR_NONE){
