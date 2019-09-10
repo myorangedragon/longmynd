@@ -3,11 +3,13 @@ SRC = main.c nim.c ftdi.c stv0910.c stv0910_utils.c stvvglna.c stvvglna_utils.c 
 OBJ = ${SRC:.c=.o}
 
 CC = gcc
-CFLAGS += -Wall -Wextra -Wunused -DVERSION=\"${VER}\"
-LDFLAGS += -lusb-1.0 -lpthread
+COPT = -O3
+CFLAGS += -Wall -Wextra -Wpedantic -Wunused -DVERSION=\"${VER}\" -pthread
+LDFLAGS += -lusb-1.0
 
 all: ${BIN} fake_read
 
+debug: COPT = -Og
 debug: CFLAGS += -ggdb -fno-omit-frame-pointer
 debug: all
 
@@ -16,11 +18,11 @@ fake_read:
 
 $(BIN): ${OBJ}
 	@echo "  LD     "$@
-	@${CC} ${CFLAGS} -o $@ ${OBJ} ${LDFLAGS}
+	@${CC} ${COPT} ${CFLAGS} -o $@ ${OBJ} ${LDFLAGS}
 
 %.o: %.c
 	@echo "  CC     "$<
-	@${CC} ${CFLAGS} -c -fPIC -o $@ $<
+	@${CC} ${COPT} ${CFLAGS} -c -fPIC -o $@ $<
 
 clean:
 	@rm -rf ${BIN} fake_read ${OBJ}
