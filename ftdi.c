@@ -445,8 +445,10 @@ uint8_t ftdi_init(uint8_t usb_bus, uint8_t usb_addr) {
 
     printf("Flow: FTDI init\n");
 
-    err=ftdi_usb_init(usb_bus, usb_addr, FTDI_VID, FTDI_PID);
-    if (err==ERROR_NONE) err=ftdi_usb_set_mpsse_mode();
+    err=ftdi_usb_init_i2c(usb_bus, usb_addr, FTDI_VID, FTDI_PID);
+    if (err==ERROR_NONE) err=ftdi_usb_set_mpsse_mode_i2c();
+    if (err==ERROR_NONE) err=ftdi_usb_init_ts(usb_bus, usb_addr, FTDI_VID, FTDI_PID);
+    if (err==ERROR_NONE) err=ftdi_usb_set_mpsse_mode_ts();
     if (err==ERROR_NONE) err=ftdi_setup_ftdi_io();
     if (err==ERROR_NONE) err=ftdi_nim_reset();
     

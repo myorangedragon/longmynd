@@ -4,7 +4,7 @@ OBJ = ${SRC:.c=.o}
 
 CC = gcc
 CFLAGS += -Wall -Wextra -Wunused -DVERSION=\"${VER}\"
-LDFLAGS += -lusb-1.0
+LDFLAGS += -lusb-1.0 -lpthread
 
 all: ${BIN} fake_read
 

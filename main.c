@@ -30,6 +30,7 @@
 #include <unistd.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <pthread.h>
 #include "ftdi.h"
 #include "stv0910.h"
 #include "stv0910_regs.h"
@@ -66,15 +67,12 @@
 #define STATUS_VITERBI_ERROR_RATE 10
 #define STATUS_BER                11
 
-/* number of background loop periods between each status reporting. Note: this loop period */
-/* includes the timeout for the USB which is a lot slower when there is TS data */
-#define TIMER_REPORT_STATUS 10
 
 /* The number of constellation peeks we do for each background loop */
 #define NUM_CONSTELLATIONS 16
 
-/* we have to do reporting in small chunks to keep up with the Transport stream */
-#define REPORTS_CHUNKS 5
+/* Milliseconds between each status report loop */
+#define STATUS_LOOP_MS  100
 
 /* -------------------------------------------------------------------------------------------------- */
 /* ----------------- GLOBALS ------------------------------------------------------------------------ */
@@ -87,6 +85,17 @@ uint32_t freq;  /* the requested frequency required for status reporting */
 /* -------------------------------------------------------------------------------------------------- */
 /* ----------------- ROUTINES ----------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------------------------------- */
+
+uint64_t timestamp_ms(void) {
+    struct timespec tp;
+
+    if(clock_gettime(CLOCK_REALTIME, &tp) != 0)
+    {
+        return 0;
+    }
+
+    return (uint64_t) tp.tv_sec * 1000 + tp.tv_nsec / 1000000;
+}
 
 /* -------------------------------------------------------------------------------------------------- */
 uint8_t process_command_line(int argc, char *argv[],
@@ -200,7 +209,7 @@ uint8_t process_command_line(int argc, char *argv[],
 }
 
 /* -------------------------------------------------------------------------------------------------- */
-uint8_t do_report() {
+uint8_t do_report(void) {
 /* -------------------------------------------------------------------------------------------------- */
 /* interrogates the demodulator to find the interesting info to report                                */
 /*  state: the current state machine                                                                  */
@@ -218,53 +227,85 @@ uint8_t do_report() {
     uint32_t actual_freq;
     uint32_t sr;
     uint32_t ber;
-    static int loop_count=0; /* used to keep track of what we are reporting in which time slot */
 
-    /* Note that we can only do a very limited amount of register reads in between each TS frame  */
-    /* (problems start with 27 reg reads) so we have to do it a bit at a time                     */
-    loop_count++;
-    if (loop_count==REPORTS_CHUNKS) loop_count=0;
-
-    if (loop_count==0) {
-        /* LNAs if present */
-        if (lna_ok) {
-            if (err==ERROR_NONE) stvvglna_read_agc(NIM_INPUT_TOP, &lna_gain, &lna_vgo);
-            if (err==ERROR_NONE) err=fifo_status_write(STATUS_LNA_GAIN,(lna_gain<<5) | lna_vgo);
-        }
-        /* I,Q powers */
-        if (err==ERROR_NONE) err=stv0910_read_power(STV0910_DEMOD_TOP, &power_i, &power_q);
-        if (err==ERROR_NONE) err=fifo_status_write(STATUS_POWER_I, power_i);
-        if (err==ERROR_NONE) err=fifo_status_write(STATUS_POWER_Q, power_q);
-    } else if (loop_count==1) {
-        /* constellations */
-        for (count=0; count<NUM_CONSTELLATIONS; count++) {
-            if (err==ERROR_NONE) stv0910_read_constellation(STV0910_DEMOD_TOP, &i, &q);
-            if (err==ERROR_NONE) err=fifo_status_write(STATUS_CONSTELLATION_I, i);
-            if (err==ERROR_NONE) err=fifo_status_write(STATUS_CONSTELLATION_Q, q);
-        }
-    } else if (loop_count==2) {
-        /* puncture rate */
-        if (err==ERROR_NONE) err=stv0910_read_puncture_rate(STV0910_DEMOD_TOP, &puncture_rate);
-        if (err==ERROR_NONE) err=fifo_status_write(STATUS_PUNCTURE_RATE, puncture_rate);
-        /* carrier frequency offset we are trying */
-        if (err==ERROR_NONE) err=stv0910_read_car_freq(STV0910_DEMOD_TOP, &car_freq);
-        /* note we now have the offset, so we need to add in the freq we tried to set it to */
-        actual_freq=(uint32_t)(freq+(car_freq/1000));
-        if (err==ERROR_NONE) err=fifo_status_write(STATUS_CARRIER_FREQUENCY, actual_freq);
-    } else if (loop_count==3) {
-        /* symbol rate we are trying */
-        if (err==ERROR_NONE) err=stv0910_read_sr(STV0910_DEMOD_TOP, &sr);
-        if (err==ERROR_NONE) err=fifo_status_write(STATUS_SYMBOL_RATE, sr);
-        /* viterbi error rate */
-        if (err==ERROR_NONE) err=stv0910_read_err_rate(STV0910_DEMOD_TOP, &vit_errs);
-        if (err==ERROR_NONE) err=fifo_status_write(STATUS_VITERBI_ERROR_RATE, vit_errs); 
-    } else if (loop_count==4) {
-        /* BER */
-        if (err==ERROR_NONE) err=stv0910_read_ber(STV0910_DEMOD_TOP, &ber);
-        if (err==ERROR_NONE) err=fifo_status_write(STATUS_BER, ber); 
+    /* LNAs if present */
+    if (lna_ok) {
+        if (err==ERROR_NONE) stvvglna_read_agc(NIM_INPUT_TOP, &lna_gain, &lna_vgo);
+        if (err==ERROR_NONE) err=fifo_status_write(STATUS_LNA_GAIN,(lna_gain<<5) | lna_vgo);
     }
 
+    /* I,Q powers */
+    if (err==ERROR_NONE) err=stv0910_read_power(STV0910_DEMOD_TOP, &power_i, &power_q);
+    if (err==ERROR_NONE) err=fifo_status_write(STATUS_POWER_I, power_i);
+    if (err==ERROR_NONE) err=fifo_status_write(STATUS_POWER_Q, power_q);
+
+    /* constellations */
+    for (count=0; count<NUM_CONSTELLATIONS; count++) {
+        if (err==ERROR_NONE) stv0910_read_constellation(STV0910_DEMOD_TOP, &i, &q);
+        if (err==ERROR_NONE) err=fifo_status_write(STATUS_CONSTELLATION_I, i);
+        if (err==ERROR_NONE) err=fifo_status_write(STATUS_CONSTELLATION_Q, q);
+    }
+
+    /* puncture rate */
+    if (err==ERROR_NONE) err=stv0910_read_puncture_rate(STV0910_DEMOD_TOP, &puncture_rate);
+    if (err==ERROR_NONE) err=fifo_status_write(STATUS_PUNCTURE_RATE, puncture_rate);
+
+    /* carrier frequency offset we are trying */
+    if (err==ERROR_NONE) err=stv0910_read_car_freq(STV0910_DEMOD_TOP, &car_freq);
+
+    /* note we now have the offset, so we need to add in the freq we tried to set it to */
+    actual_freq=(uint32_t)(freq+(car_freq/1000));
+    if (err==ERROR_NONE) err=fifo_status_write(STATUS_CARRIER_FREQUENCY, actual_freq);
+
+    /* symbol rate we are trying */
+    if (err==ERROR_NONE) err=stv0910_read_sr(STV0910_DEMOD_TOP, &sr);
+    if (err==ERROR_NONE) err=fifo_status_write(STATUS_SYMBOL_RATE, sr);
+
+    /* viterbi error rate */
+    if (err==ERROR_NONE) err=stv0910_read_err_rate(STV0910_DEMOD_TOP, &vit_errs);
+    if (err==ERROR_NONE) err=fifo_status_write(STATUS_VITERBI_ERROR_RATE, vit_errs); 
+
+    /* BER */
+    if (err==ERROR_NONE) err=stv0910_read_ber(STV0910_DEMOD_TOP, &ber);
+    if (err==ERROR_NONE) err=fifo_status_write(STATUS_BER, ber); 
+
     return err;
+}
+
+pthread_t thread_ts;
+
+typedef struct {
+    uint8_t *main_state_ptr;
+    uint8_t *main_err_ptr;
+    bool use_ip;
+} loop_ts_vars_t;
+
+void *loop_ts(void *arg){
+    loop_ts_vars_t *loop_ts_vars=(loop_ts_vars_t *)arg;
+    uint8_t err;
+    uint16_t len=0;
+
+    while(err == ERROR_NONE && *loop_ts_vars->main_err_ptr == ERROR_NONE){
+
+        /* once we are running, every time round we check to see if there is any ts data to send out */
+        if (*loop_ts_vars->main_state_ptr==STATE_INIT){
+            /* if we are in the init phase then we need to empty the TS buffer from any old data */
+            do {
+                if (err==ERROR_NONE) err=ftdi_usb_ts_read(buffer, &len);
+            } while (len>2);
+        }else{
+            if (err==ERROR_NONE) err=ftdi_usb_ts_read(buffer, &len);
+            //fprintf(stderr, "ts_read: %d\n", len);
+            /* if there is ts data then we send it out to the required output. But, we have to lose the first 2 bytes */
+            /* that are the usual FTDI 2 byte response and not part of the TS */
+            if ((err==ERROR_NONE) && (len>2)) {
+                if (loop_ts_vars->use_ip) err= udp_ts_write(&buffer[2],len-2);
+                else        err=fifo_ts_write(&buffer[2],len-2);
+            }
+        }
+
+    }
+    return NULL;
 }
 
 /* -------------------------------------------------------------------------------------------------- */
@@ -279,14 +320,14 @@ int main(int argc, char *argv[]) {
     uint8_t usb_bus, usb_addr;
     uint32_t sr;
     uint8_t demod_state;
-    uint16_t len=0;
-    uint16_t timer=1; /* ensure we do state change at very start */
+    uint64_t last_status_loop;
     char *ts_fifo;
     char *status_fifo;
     char *ip_addr;
     int ip_port;
     bool swap;
     bool use_ip;
+
 
     printf("Flow: main\n");
 
@@ -299,147 +340,145 @@ int main(int argc, char *argv[]) {
     if ((use_ip) && (err==ERROR_NONE)) err=udp_init(ip_addr, ip_port);
     if (err==ERROR_NONE) err=ftdi_init(usb_bus, usb_addr);
 
+    loop_ts_vars_t loop_ts_vars = {
+        .main_state_ptr = &state,
+        .main_err_ptr = &err,
+        .use_ip = use_ip
+    };
+
+    if(0 != pthread_create(&thread_ts, NULL, loop_ts, (void *)&loop_ts_vars))
+    {
+        fprintf(stderr, "Error creating loop_ts pthread\n");
+    }
+
     /* here is the main loop and state machine */
     while (err==ERROR_NONE) {
+        last_status_loop = timestamp_ms();
+        switch(state) {
+            case STATE_INIT:
+                if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                /* init all the modules */
+                if (err==ERROR_NONE) err=nim_init();
+                /* we are only using the one demodulator so set the other to 0 to turn it off */
+                if (err==ERROR_NONE) err=stv0910_init(sr,0);
+                /* we only use one of the tuners in STV6120 so freq for tuner 2=0 to turn it off */
+                if (err==ERROR_NONE) err=stv6120_init(freq,0,swap);
+                /* we turn on the LNA we want and turn the other off (if they exist) */
+                if (err==ERROR_NONE) err=stvvglna_init(NIM_INPUT_TOP,    (swap) ? STVVGLNA_OFF : STVVGLNA_ON,  &lna_ok);
+                if (err==ERROR_NONE) err=stvvglna_init(NIM_INPUT_BOTTOM, (swap) ? STVVGLNA_ON  : STVVGLNA_OFF, &lna_ok);
 
-        /* once we are running, every time round we check to see if there is any ts data to send out */
-        if (state!=STATE_INIT) {
-            if (err==ERROR_NONE) err=ftdi_usb_ts_read(buffer, &len);
-            /* if there is ts data then we send it out to the required output. But, we have to lose the first 2 bytes */
-            /* that are the usual FTDI 2 byte response and not part of the TS */
-            if ((err==ERROR_NONE) && (len>2)) {
-                if (use_ip) err= udp_ts_write(&buffer[2],len-2);
-                else        err=fifo_ts_write(&buffer[2],len-2);
-            }
-        }
+                if (err!=ERROR_NONE) printf("ERROR: failed to init a device - is the NIM powered on?\n");
 
-        /* decide if we are ready to do or check state change */
-        timer--;
-        if ((err==ERROR_NONE) && (timer==0)) {
-            timer=TIMER_REPORT_STATUS; /* reset the timer ready to time the next reporting of state */
-
-            switch(state) {
-                case STATE_INIT:
-                    /* if we are in the init phase then we need to empty the TS buffer from any old data */
-                    printf("Flow: Emptying old TS buffer\n");
-                    do {
-                        if (err==ERROR_NONE) err=ftdi_usb_ts_read(buffer, &len);
-                    } while (len>2);
+                /* now start the whole thing scanning for the signal */
+                if (err==ERROR_NONE) {
+                    err=stv0910_start_scan(STV0910_DEMOD_TOP);
+                    state=STATE_DEMOD_HUNTING;
                     if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
-                    /* init all the modules */
-                    if (err==ERROR_NONE) err=nim_init();
-                    /* we are only using the one demodulator so set the other to 0 to turn it off */
-                    if (err==ERROR_NONE) err=stv0910_init(sr,0);
-                    /* we only use one of the tuners in STV6120 so freq for tuner 2=0 to turn it off */
-                    if (err==ERROR_NONE) err=stv6120_init(freq,0,swap);
-                    /* we turn on the LNA we want and turn the other off (if they exist) */
-                    if (err==ERROR_NONE) err=stvvglna_init(NIM_INPUT_TOP,    (swap) ? STVVGLNA_OFF : STVVGLNA_ON,  &lna_ok);
-                    if (err==ERROR_NONE) err=stvvglna_init(NIM_INPUT_BOTTOM, (swap) ? STVVGLNA_ON  : STVVGLNA_OFF, &lna_ok);
+                }
+               break;
 
-                    if (err!=ERROR_NONE) printf("ERROR: failed to init a device - is the NIM powered on?\n");
+            case STATE_DEMOD_HUNTING:
+                if (err==ERROR_NONE) err=do_report();
+                /* process state changes */
+                if (err==ERROR_NONE) err=stv0910_read_scan_state(STV0910_DEMOD_TOP, &demod_state);
+                if (demod_state==DEMOD_FOUND_HEADER) {
+                     state=STATE_DEMOD_FOUND_HEADER;
+                     if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                }
+                else if (demod_state==DEMOD_S2) {
+                    state=STATE_DEMOD_S2;
+                    if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                }
+                else if (demod_state==DEMOD_S) {
+                    state=STATE_DEMOD_S;
+                    if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                }
+                else if ((demod_state!=DEMOD_HUNTING) && (err==ERROR_NONE)) {
+                    printf("ERROR: demodulator returned a bad scan state\n");
+                    err=ERROR_BAD_DEMOD_HUNT_STATE; /* not allowed to have any other states */
+                } /* no need for another else, all states covered */
+                break;
 
-                    /* now start the whole thing scanning for the signal */
-                    if (err==ERROR_NONE) {
-                        err=stv0910_start_scan(STV0910_DEMOD_TOP);
-                        state=STATE_DEMOD_HUNTING;
-                        if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
-                    }
-                   break;
+            case STATE_DEMOD_FOUND_HEADER:
+                if (err==ERROR_NONE) err=do_report();
+                /* process state changes */
+                err=stv0910_read_scan_state(STV0910_DEMOD_TOP, &demod_state);
+                if (demod_state==DEMOD_HUNTING) {
+                    state=STATE_DEMOD_HUNTING;
+                    if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                }
+                else if (demod_state==DEMOD_S2)  {
+                    state=STATE_DEMOD_S2;
+                    if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                }
+                else if (demod_state==DEMOD_S)  {
+                    state=STATE_DEMOD_S;
+                    if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                }
+                else if ((demod_state!=DEMOD_FOUND_HEADER) && (err==ERROR_NONE)) {
+                    printf("ERROR: demodulator returned a bad scan state\n");
+                    err=ERROR_BAD_DEMOD_HUNT_STATE; /* not allowed to have any other states */
+                } /* no need for another else, all states covered */
+                break;
 
-                case STATE_DEMOD_HUNTING:
-                    if (err==ERROR_NONE) err=do_report();
-                    /* process state changes */
-                    if (err==ERROR_NONE) err=stv0910_read_scan_state(STV0910_DEMOD_TOP, &demod_state);
-                    if (demod_state==DEMOD_FOUND_HEADER) {
-                         state=STATE_DEMOD_FOUND_HEADER;
-                         if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
-                    }
-                    else if (demod_state==DEMOD_S2) {
-                        state=STATE_DEMOD_S2;
-                        if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
-                    }
-                    else if (demod_state==DEMOD_S) {
-                        state=STATE_DEMOD_S;
-                        if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
-                    }
-                    else if ((demod_state!=DEMOD_HUNTING) && (err==ERROR_NONE)) {
-                        printf("ERROR: demodulator returned a bad scan state\n");
-                        err=ERROR_BAD_DEMOD_HUNT_STATE; /* not allowed to have any other states */
-                    } /* no need for another else, all states covered */
-                    break;
+            case STATE_DEMOD_S2:
+                if (err==ERROR_NONE) err=do_report();
+                /* process state changes */
+                err=stv0910_read_scan_state(STV0910_DEMOD_TOP, &demod_state);
+                if (demod_state==DEMOD_HUNTING) {
+                    state=STATE_DEMOD_HUNTING;
+                    if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                }
+                else if (demod_state==DEMOD_FOUND_HEADER)  {
+                    state=STATE_DEMOD_FOUND_HEADER;
+                    if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                }
+                else if (demod_state==DEMOD_S) {
+                    state=STATE_DEMOD_S;
+                    if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                }
+                else if ((demod_state!=DEMOD_S2) && (err==ERROR_NONE)) {
+                    printf("ERROR: demodulator returned a bad scan state\n");
+                    err=ERROR_BAD_DEMOD_HUNT_STATE; /* not allowed to have any other states */
+                } /* no need for another else, all states covered */
+                break;
 
-                case STATE_DEMOD_FOUND_HEADER:
-                    if (err==ERROR_NONE) err=do_report();
-                    /* process state changes */
-                    err=stv0910_read_scan_state(STV0910_DEMOD_TOP, &demod_state);
-                    if (demod_state==DEMOD_HUNTING) {
-                        state=STATE_DEMOD_HUNTING;
-                        if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
-                    }
-                    else if (demod_state==DEMOD_S2)  {
-                        state=STATE_DEMOD_S2;
-                        if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
-                    }
-                    else if (demod_state==DEMOD_S)  {
-                        state=STATE_DEMOD_S;
-                        if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
-                    }
-                    else if ((demod_state!=DEMOD_FOUND_HEADER) && (err==ERROR_NONE)) {
-                        printf("ERROR: demodulator returned a bad scan state\n");
-                        err=ERROR_BAD_DEMOD_HUNT_STATE; /* not allowed to have any other states */
-                    } /* no need for another else, all states covered */
-                    break;
+            case STATE_DEMOD_S:
+                if (err==ERROR_NONE) err=do_report();
+                /* process state changes */
+                err=stv0910_read_scan_state(STV0910_DEMOD_TOP, &demod_state);
+                if (demod_state==DEMOD_HUNTING) {
+                    state=STATE_DEMOD_HUNTING;
+                    if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                }
+                else if (demod_state==DEMOD_FOUND_HEADER)  {
+                    state=STATE_DEMOD_FOUND_HEADER;
+                    if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                }
+                else if (demod_state==DEMOD_S2) {
+                    state=STATE_DEMOD_S2;
+                    if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                }
+                else if ((demod_state!=DEMOD_S) && (err==ERROR_NONE)) {
+                    printf("ERROR: demodulator returned a bad scan state\n");
+                    err=ERROR_BAD_DEMOD_HUNT_STATE; /* not allowed to have any other states */
+                } /* no need for another else, all states covered */
+                break;
 
-                case STATE_DEMOD_S2:
-                    if (err==ERROR_NONE) err=do_report();
-                    /* process state changes */
-                    err=stv0910_read_scan_state(STV0910_DEMOD_TOP, &demod_state);
-                    if (demod_state==DEMOD_HUNTING) {
-                        state=STATE_DEMOD_HUNTING;
-                        if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
-                    }
-                    else if (demod_state==DEMOD_FOUND_HEADER)  {
-                        state=STATE_DEMOD_FOUND_HEADER;
-                        if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
-                    }
-                    else if (demod_state==DEMOD_S) {
-                        state=STATE_DEMOD_S;
-                        if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
-                    }
-                    else if ((demod_state!=DEMOD_S2) && (err==ERROR_NONE)) {
-                        printf("ERROR: demodulator returned a bad scan state\n");
-                        err=ERROR_BAD_DEMOD_HUNT_STATE; /* not allowed to have any other states */
-                    } /* no need for another else, all states covered */
-                    break;
-
-                case STATE_DEMOD_S:
-                    if (err==ERROR_NONE) err=do_report();
-                    /* process state changes */
-                    err=stv0910_read_scan_state(STV0910_DEMOD_TOP, &demod_state);
-                    if (demod_state==DEMOD_HUNTING) {
-                        state=STATE_DEMOD_HUNTING;
-                        if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
-                    }
-                    else if (demod_state==DEMOD_FOUND_HEADER)  {
-                        state=STATE_DEMOD_FOUND_HEADER;
-                        if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
-                    }
-                    else if (demod_state==DEMOD_S2) {
-                        state=STATE_DEMOD_S2;
-                        if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
-                    }
-                    else if ((demod_state!=DEMOD_S) && (err==ERROR_NONE)) {
-                        printf("ERROR: demodulator returned a bad scan state\n");
-                        err=ERROR_BAD_DEMOD_HUNT_STATE; /* not allowed to have any other states */
-                    } /* no need for another else, all states covered */
-                    break;
-
-                default:
-                    err=ERROR_STATE; /* we should never get here so panic if we do */
-                    break;
-            }
+            default:
+                err=ERROR_STATE; /* we should never get here so panic if we do */
+                break;
         }
+
+        /* Status Report Loop Timer */
+        do {
+            /* Sleep for at least 10ms */
+            usleep(10*1000);
+        } while (timestamp_ms() < (last_status_loop + STATUS_LOOP_MS));
     }
+
+    /* Exited, wait for child threads to exit */
+    pthread_join(thread_ts, NULL);
 
     return err;
 }
