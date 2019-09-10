@@ -143,7 +143,7 @@ uint8_t fifo_init(char *ts_fifo, char *status_fifo, bool ignore_ts_fifo) {
     fd_status_fifo = open(status_fifo, O_WRONLY); 
     if (err==ERROR_NONE) {
         if (fd_status_fifo<0) {
-        printf("ERROR: Failed to open ts fifo%s\n",status_fifo);
+        printf("ERROR: Failed to open status fifo %s\n",status_fifo);
         err=ERROR_OPEN_STATUS_FIFO;
         } else printf("      Status: opened status fifo ok\n");
     }

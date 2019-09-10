@@ -8,6 +8,9 @@ LDFLAGS += -lusb-1.0
 
 all: ${BIN} fake_read
 
+debug: CFLAGS += -ggdb -fno-omit-frame-pointer
+debug: all
+
 fake_read:
 	@${CC} fake_read.c -o $@
 

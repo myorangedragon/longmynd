@@ -8,6 +8,10 @@ Copyright 2019 Heather Lomond
 
     sudo apt-get install libusb-1.0-0-dev
 
+To run longmynd without requiring root, unplug the minitiouner and then install the udev rules file with:
+
+    sudo cp minitiouner.rules /etc/udev/rules.d/
+
 ## Compile
 
     make

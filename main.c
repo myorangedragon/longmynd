@@ -144,34 +144,52 @@ uint8_t process_command_line(int argc, char *argv[],
         param++;
     }
 
-    *main_freq =(uint32_t)strtol(argv[param++],NULL,10);
-    *main_sr   =(uint32_t)strtol(argv[param  ],NULL,10);
+    if ((argc-param)<2) {
+        err=ERROR_ARGS_INPUT;
+        printf("ERROR: Main Frequency and Main Symbol Rate not found.\n");
+    }
 
-    if (*main_freq>2450000) {
-        err=ERROR_ARGS_INPUT;
-        printf("ERROR: Freq must be <= 2450 MHz\n");
-    } else if (*main_freq<144) {
-        err=ERROR_ARGS_INPUT;
-        printf("ERROR: Freq_must be >= 144 MHz\n");
-    } else if (*main_sr>27500) {
-        err=ERROR_ARGS_INPUT;
-        printf("ERROR: SR must be <= 27 Msymbols/s\n");
-    } else if (*main_sr<33) {
-        err=ERROR_ARGS_INPUT;
-        printf("ERROR: SR must be >= 33 Ksymbols/s\n");
-    } else if (main_ip_set && main_fifo_set) {
-        err=ERROR_ARGS_INPUT;
-        printf("ERROR: Cannot set main FIFO and Main IP address\n");
-    } else { /* err==ERROR_NONE */
-         printf("      Status: Main Frequency=%i KHz\n",*main_freq);
-         printf("              Main Symbol Rate=%i KSymbols/S\n",*main_sr);
-         if (!main_usb_set) printf("              Using First Minitiouner detected on USB\n");
-         else               printf("              USB bus/device=%i,%i\n",*main_usb_bus,*main_usb_addr);
-         if (!main_ip_set)  printf("              Main TS output to FIFO=%s\n",*main_ts_fifo);
-         else               printf("              Main TS output to IP=%s:%i\n",*main_ip_addr,*main_ip_port);
-         printf("              Main Status FIFO=%s\n",*main_status_fifo);
-         if (*swap)         printf("              NIM inputs are swapped (Main now refers to BOTTOM F-Type\n");
-         else               printf("              Main refers to TOP F-Type\n");
+    if (err==ERROR_NONE) {
+        *main_freq =(uint32_t)strtol(argv[param++],NULL,10);
+        if(*main_freq==0) {
+            err=ERROR_ARGS_INPUT;
+            printf("ERROR: Main Frequency not in a valid format.\n");
+        }
+
+        *main_sr   =(uint32_t)strtol(argv[param  ],NULL,10);
+        if(*main_sr==0) {
+            err=ERROR_ARGS_INPUT;
+            printf("ERROR: Main Symbol Rate not in a valid format.\n");
+        }
+    }
+
+    if (err==ERROR_NONE) {
+        if (*main_freq>2450000) {
+            err=ERROR_ARGS_INPUT;
+            printf("ERROR: Freq must be <= 2450 MHz\n");
+        } else if (*main_freq<144) {
+            err=ERROR_ARGS_INPUT;
+            printf("ERROR: Freq_must be >= 144 MHz\n");
+        } else if (*main_sr>27500) {
+            err=ERROR_ARGS_INPUT;
+            printf("ERROR: SR must be <= 27 Msymbols/s\n");
+        } else if (*main_sr<33) {
+            err=ERROR_ARGS_INPUT;
+            printf("ERROR: SR must be >= 33 Ksymbols/s\n");
+        } else if (main_ip_set && main_fifo_set) {
+            err=ERROR_ARGS_INPUT;
+            printf("ERROR: Cannot set main FIFO and Main IP address\n");
+        } else { /* err==ERROR_NONE */
+             printf("      Status: Main Frequency=%i KHz\n",*main_freq);
+             printf("              Main Symbol Rate=%i KSymbols/S\n",*main_sr);
+             if (!main_usb_set) printf("              Using First Minitiouner detected on USB\n");
+             else               printf("              USB bus/device=%i,%i\n",*main_usb_bus,*main_usb_addr);
+             if (!main_ip_set)  printf("              Main TS output to FIFO=%s\n",*main_ts_fifo);
+             else               printf("              Main TS output to IP=%s:%i\n",*main_ip_addr,*main_ip_port);
+             printf("              Main Status FIFO=%s\n",*main_status_fifo);
+             if (*swap)         printf("              NIM inputs are swapped (Main now refers to BOTTOM F-Type\n");
+             else               printf("              Main refers to TOP F-Type\n");
+        }
     }
 
     if (err!=ERROR_NONE) {
@@ -317,7 +335,8 @@ int main(int argc, char *argv[]) {
                     /* we turn on the LNA we want and turn the other off (if they exist) */
                     if (err==ERROR_NONE) err=stvvglna_init(NIM_INPUT_TOP,    (swap) ? STVVGLNA_OFF : STVVGLNA_ON,  &lna_ok);
                     if (err==ERROR_NONE) err=stvvglna_init(NIM_INPUT_BOTTOM, (swap) ? STVVGLNA_ON  : STVVGLNA_OFF, &lna_ok);
-                    if (err!=ERROR_NONE) printf("ERROR: failed to init a device\n");
+
+                    if (err!=ERROR_NONE) printf("ERROR: failed to init a device - is the NIM powered on?\n");
 
                     /* now start the whole thing scanning for the signal */
                     if (err==ERROR_NONE) {
