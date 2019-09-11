@@ -67,6 +67,7 @@
 #define STATUS_SYMBOL_RATE         9
 #define STATUS_VITERBI_ERROR_RATE 10
 #define STATUS_BER                11
+#define STATUS_MER                12
 
 
 /* The number of constellation peeks we do for each background loop */
@@ -247,7 +248,7 @@ uint8_t process_command_line(int argc, char *argv[], longmynd_config_t *config) 
 }
 
 /* -------------------------------------------------------------------------------------------------- */
-uint8_t do_report(uint8_t (*status_write)(uint8_t,uint32_t)) {
+uint8_t do_report(uint8_t state, uint8_t (*status_write)(uint8_t,uint32_t)) {
 /* -------------------------------------------------------------------------------------------------- */
 /* interrogates the demodulator to find the interesting info to report                                */
 /*  state: the current state machine                                                                  */
@@ -265,6 +266,7 @@ uint8_t do_report(uint8_t (*status_write)(uint8_t,uint32_t)) {
     uint32_t actual_freq;
     uint32_t sr;
     uint32_t ber;
+    uint32_t mer;
 
     /* LNAs if present */
     if (lna_ok) {
@@ -305,7 +307,13 @@ uint8_t do_report(uint8_t (*status_write)(uint8_t,uint32_t)) {
 
     /* BER */
     if (err==ERROR_NONE) err=stv0910_read_ber(STV0910_DEMOD_TOP, &ber);
-    if (err==ERROR_NONE) err=status_write(STATUS_BER, ber); 
+    if (err==ERROR_NONE) err=status_write(STATUS_BER, ber);
+
+    /* MER */
+    if(state==STATE_DEMOD_S2) {
+        if (err==ERROR_NONE) err=stv0910_read_dvbs2_mer(STV0910_DEMOD_TOP, &mer);
+        if (err==ERROR_NONE) err=status_write(STATUS_MER, mer);
+    }
 
     return err;
 }
@@ -422,7 +430,7 @@ int main(int argc, char *argv[]) {
                break;
 
             case STATE_DEMOD_HUNTING:
-                if (err==ERROR_NONE) err=do_report(status_write);
+                if (err==ERROR_NONE) err=do_report(state, status_write);
                 /* process state changes */
                 if (err==ERROR_NONE) err=stv0910_read_scan_state(STV0910_DEMOD_TOP, &demod_state);
                 if (demod_state==DEMOD_FOUND_HEADER) {
@@ -444,7 +452,7 @@ int main(int argc, char *argv[]) {
                 break;
 
             case STATE_DEMOD_FOUND_HEADER:
-                if (err==ERROR_NONE) err=do_report(status_write);
+                if (err==ERROR_NONE) err=do_report(state, status_write);
                 /* process state changes */
                 err=stv0910_read_scan_state(STV0910_DEMOD_TOP, &demod_state);
                 if (demod_state==DEMOD_HUNTING) {
@@ -466,7 +474,7 @@ int main(int argc, char *argv[]) {
                 break;
 
             case STATE_DEMOD_S2:
-                if (err==ERROR_NONE) err=do_report(status_write);
+                if (err==ERROR_NONE) err=do_report(state, status_write);
                 /* process state changes */
                 err=stv0910_read_scan_state(STV0910_DEMOD_TOP, &demod_state);
                 if (demod_state==DEMOD_HUNTING) {
@@ -488,7 +496,7 @@ int main(int argc, char *argv[]) {
                 break;
 
             case STATE_DEMOD_S:
-                if (err==ERROR_NONE) err=do_report(status_write);
+                if (err==ERROR_NONE) err=do_report(state, status_write);
                 /* process state changes */
                 err=stv0910_read_scan_state(STV0910_DEMOD_TOP, &demod_state);
                 if (demod_state==DEMOD_HUNTING) {

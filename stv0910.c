@@ -226,6 +226,26 @@ uint8_t stv0910_read_ber(uint8_t demod, uint32_t *ber) {
 }
 
 /* -------------------------------------------------------------------------------------------------- */
+uint8_t stv0910_read_dvbs2_mer(uint8_t demod, uint32_t *mer) {
+/* -------------------------------------------------------------------------------------------------- */
+/*    demod: STV0910_DEMOD_TOP | STV0910_DEMOD_BOTTOM: which demodulator is being read                */
+/*      mer: place to store the result                                                                */
+/*   return: error state                                                                              */
+/* -------------------------------------------------------------------------------------------------- */
+    uint8_t err;
+    uint8_t high, low;
+
+    /* first we trigger a buffer transfer and read the byte counter 40 bits */
+                         err=stv0910_read_reg(demod==STV0910_DEMOD_TOP ? RSTV0910_P2_NOSRAMPOS : RSTV0910_P1_NOSRAMPOS, &high);
+    if (err==ERROR_NONE) err=stv0910_read_reg(demod==STV0910_DEMOD_TOP ? RSTV0910_P2_NOSRAMVAL : RSTV0910_P1_NOSRAMVAL, &low);
+    *mer = ((high & 0x03) << 8) | low;
+
+    if (err!=ERROR_NONE) printf("ERROR: STV0910 read DVBS2 MER\n");
+
+    return err;
+}
+
+/* -------------------------------------------------------------------------------------------------- */
 uint8_t stv0910_setup_clocks() {
 /* -------------------------------------------------------------------------------------------------- */
 /* sequence is:                                                                                       */
