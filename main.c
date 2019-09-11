@@ -30,6 +30,7 @@
 #include <unistd.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 #include <pthread.h>
 #include "ftdi.h"
 #include "stv0910.h"
@@ -82,6 +83,27 @@ uint8_t buffer[FTDI_USB_TS_FRAME_SIZE]; /* holds teh TS stream data */
 bool lna_ok; /* set to true when LNAs are detected */
 uint32_t freq;  /* the requested frequency required for status reporting */
 
+typedef struct {
+    bool port_swap;
+    uint32_t freq_requested;
+    uint32_t sr_requested;
+
+    uint8_t device_usb_bus;
+    uint8_t device_usb_addr;
+
+    bool ts_use_ip;
+    char ts_fifo_path[128];
+    char ts_ip_addr[16];
+    int ts_ip_port;
+
+    bool status_use_ip;
+    char status_fifo_path[128];
+    char status_ip_addr[16];
+    int status_ip_port;
+} longmynd_config_t;
+
+longmynd_config_t longmynd_config;
+
 /* -------------------------------------------------------------------------------------------------- */
 /* ----------------- ROUTINES ----------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------------------------------- */
@@ -98,12 +120,7 @@ uint64_t timestamp_ms(void) {
 }
 
 /* -------------------------------------------------------------------------------------------------- */
-uint8_t process_command_line(int argc, char *argv[],
-                             uint32_t *main_freq, uint32_t *main_sr,
-                             char **main_ts_fifo, char **main_status_fifo,
-                             uint8_t *main_usb_bus, uint8_t *main_usb_addr,
-                             bool *main_ip_set, char **main_ip_addr, int *main_ip_port,
-                             bool *swap) {
+uint8_t process_command_line(int argc, char *argv[], longmynd_config_t *config) {
 /* -------------------------------------------------------------------------------------------------- */
 /* processes the command line arguments, sets up the parameters in main from them and error checks    */
 /* All the required parameters are passed in                                                          */
@@ -112,40 +129,51 @@ uint8_t process_command_line(int argc, char *argv[],
     uint8_t err=ERROR_NONE;
     uint8_t param;
     bool main_usb_set=false;
-    bool main_fifo_set=false;
+    bool ts_ip_set=false;
+    bool ts_fifo_set=false;
+    bool status_ip_set=false;
+    bool status_fifo_set=false;
 
-    *main_ts_fifo="longmynd_main_ts";
-    *main_status_fifo="longmynd_main_status";
-    *main_usb_bus=0;
-    *main_usb_addr=0;
-    *main_ip_set=false;
-    *main_ip_addr="";
-    *main_ip_port=0;
-    *swap=false;
+    /* Defaults */
+    config->port_swap = false;
+    config->device_usb_addr = 0;
+    config->device_usb_bus = 0;
+    config->ts_use_ip = false;
+    strcpy(config->ts_fifo_path, "longmynd_main_ts");
+    config->status_use_ip = false;
+    strcpy(config->status_fifo_path, "longmynd_main_status");
 
     param=1;
     while (param<argc-2) {
         if (argv[param][0]=='-') {
           switch (argv[param++][1]) {
             case 'u':
-                *main_usb_bus =(uint8_t)strtol(argv[param++],NULL,10);
-                *main_usb_addr=(uint8_t)strtol(argv[param  ],NULL,10);
+                config->device_usb_bus =(uint8_t)strtol(argv[param++],NULL,10);
+                config->device_usb_addr=(uint8_t)strtol(argv[param  ],NULL,10);
                 main_usb_set=true;
                 break;
             case 'i':
-                *main_ip_addr=argv[param++];
-                *main_ip_port=(uint16_t)strtol(argv[param],NULL,10);
-                *main_ip_set=true;
+                strncpy(config->ts_ip_addr,argv[param++], 16);
+                config->ts_ip_port=(uint16_t)strtol(argv[param],NULL,10);
+                config->ts_use_ip=true;
+                ts_ip_set = true;
                 break;
             case 't':
-                *main_ts_fifo=argv[param];
-                main_fifo_set=true;
+                strncpy(config->status_fifo_path, argv[param], 128);
+                ts_fifo_set=true;
+                break;
+            case 'I':
+                strncpy(config->status_ip_addr,argv[param++], 16);
+                config->status_ip_port=(uint16_t)strtol(argv[param],NULL,10);
+                config->status_use_ip=true;
+                status_ip_set = true;
                 break;
             case 's':
-                *main_status_fifo=argv[param];
+                strncpy(config->status_fifo_path, argv[param], 128);
+                status_fifo_set=true;
                 break;
             case 'w':
-                *swap=true;
+                config->port_swap=true;
                 param--; /* there is no data for this so go back */
                 break;
           }
@@ -159,45 +187,55 @@ uint8_t process_command_line(int argc, char *argv[],
     }
 
     if (err==ERROR_NONE) {
-        *main_freq =(uint32_t)strtol(argv[param++],NULL,10);
-        if(*main_freq==0) {
+        config->freq_requested =(uint32_t)strtol(argv[param++],NULL,10);
+        if(config->freq_requested==0) {
             err=ERROR_ARGS_INPUT;
             printf("ERROR: Main Frequency not in a valid format.\n");
         }
 
-        *main_sr   =(uint32_t)strtol(argv[param  ],NULL,10);
-        if(*main_sr==0) {
+        config->sr_requested =(uint32_t)strtol(argv[param  ],NULL,10);
+        if(config->sr_requested==0) {
             err=ERROR_ARGS_INPUT;
             printf("ERROR: Main Symbol Rate not in a valid format.\n");
         }
     }
 
     if (err==ERROR_NONE) {
-        if (*main_freq>2450000) {
+        if (config->freq_requested>2450000) {
             err=ERROR_ARGS_INPUT;
             printf("ERROR: Freq must be <= 2450 MHz\n");
-        } else if (*main_freq<144) {
+        } else if (config->freq_requested<144) {
             err=ERROR_ARGS_INPUT;
             printf("ERROR: Freq_must be >= 144 MHz\n");
-        } else if (*main_sr>27500) {
+        } else if (config->sr_requested>27500) {
             err=ERROR_ARGS_INPUT;
             printf("ERROR: SR must be <= 27 Msymbols/s\n");
-        } else if (*main_sr<33) {
+        } else if (config->sr_requested<33) {
             err=ERROR_ARGS_INPUT;
             printf("ERROR: SR must be >= 33 Ksymbols/s\n");
-        } else if (main_ip_set && main_fifo_set) {
+        } else if (ts_ip_set && ts_fifo_set) {
             err=ERROR_ARGS_INPUT;
-            printf("ERROR: Cannot set main FIFO and Main IP address\n");
+            printf("ERROR: Cannot set TS FIFO and TS IP address\n");
+        } else if (status_ip_set && status_fifo_set) {
+            err=ERROR_ARGS_INPUT;
+            printf("ERROR: Cannot set Status FIFO and Status IP address\n");
+        } else if (config->ts_use_ip && config->status_use_ip) {
+            /* Check ip/port conflict */
+            if((config->ts_ip_port == config->status_ip_port) && (0==strcmp(config->ts_ip_addr, config->status_ip_addr))) {
+                err=ERROR_ARGS_INPUT;
+                printf("ERROR: Cannot set Status IP & Port identical to TS IP & Port\n");
+            }
         } else { /* err==ERROR_NONE */
-             printf("      Status: Main Frequency=%i KHz\n",*main_freq);
-             printf("              Main Symbol Rate=%i KSymbols/S\n",*main_sr);
-             if (!main_usb_set) printf("              Using First Minitiouner detected on USB\n");
-             else               printf("              USB bus/device=%i,%i\n",*main_usb_bus,*main_usb_addr);
-             if (!main_ip_set)  printf("              Main TS output to FIFO=%s\n",*main_ts_fifo);
-             else               printf("              Main TS output to IP=%s:%i\n",*main_ip_addr,*main_ip_port);
-             printf("              Main Status FIFO=%s\n",*main_status_fifo);
-             if (*swap)         printf("              NIM inputs are swapped (Main now refers to BOTTOM F-Type\n");
-             else               printf("              Main refers to TOP F-Type\n");
+             printf("      Status: Main Frequency=%i KHz\n",config->freq_requested);
+             printf("              Main Symbol Rate=%i KSymbols/s\n",config->sr_requested);
+             if (!main_usb_set)       printf("              Using First Minitiouner detected on USB\n");
+             else                     printf("              USB bus/device=%i,%i\n",config->device_usb_bus,config->device_usb_addr);
+             if (!config->ts_use_ip)  printf("              Main TS output to FIFO=%s\n",config->ts_fifo_path);
+             else                     printf("              Main TS output to IP=%s:%i\n",config->ts_ip_addr,config->ts_ip_port);
+             if (!config->status_use_ip)  printf("              Main Status output to FIFO=%s\n",config->status_fifo_path);
+             else                     printf("              Main Status output to IP=%s:%i\n",config->status_ip_addr,config->status_ip_port);
+             if (config->port_swap)   printf("              NIM inputs are swapped (Main now refers to BOTTOM F-Type\n");
+             else                     printf("              Main refers to TOP F-Type\n");
         }
     }
 
@@ -209,7 +247,7 @@ uint8_t process_command_line(int argc, char *argv[],
 }
 
 /* -------------------------------------------------------------------------------------------------- */
-uint8_t do_report(void) {
+uint8_t do_report(uint8_t (*status_write)(uint8_t,uint32_t)) {
 /* -------------------------------------------------------------------------------------------------- */
 /* interrogates the demodulator to find the interesting info to report                                */
 /*  state: the current state machine                                                                  */
@@ -231,43 +269,43 @@ uint8_t do_report(void) {
     /* LNAs if present */
     if (lna_ok) {
         if (err==ERROR_NONE) stvvglna_read_agc(NIM_INPUT_TOP, &lna_gain, &lna_vgo);
-        if (err==ERROR_NONE) err=fifo_status_write(STATUS_LNA_GAIN,(lna_gain<<5) | lna_vgo);
+        if (err==ERROR_NONE) err=status_write(STATUS_LNA_GAIN,(lna_gain<<5) | lna_vgo);
     }
 
     /* I,Q powers */
     if (err==ERROR_NONE) err=stv0910_read_power(STV0910_DEMOD_TOP, &power_i, &power_q);
-    if (err==ERROR_NONE) err=fifo_status_write(STATUS_POWER_I, power_i);
-    if (err==ERROR_NONE) err=fifo_status_write(STATUS_POWER_Q, power_q);
+    if (err==ERROR_NONE) err=status_write(STATUS_POWER_I, power_i);
+    if (err==ERROR_NONE) err=status_write(STATUS_POWER_Q, power_q);
 
     /* constellations */
     for (count=0; count<NUM_CONSTELLATIONS; count++) {
         if (err==ERROR_NONE) stv0910_read_constellation(STV0910_DEMOD_TOP, &i, &q);
-        if (err==ERROR_NONE) err=fifo_status_write(STATUS_CONSTELLATION_I, i);
-        if (err==ERROR_NONE) err=fifo_status_write(STATUS_CONSTELLATION_Q, q);
+        if (err==ERROR_NONE) err=status_write(STATUS_CONSTELLATION_I, i);
+        if (err==ERROR_NONE) err=status_write(STATUS_CONSTELLATION_Q, q);
     }
 
     /* puncture rate */
     if (err==ERROR_NONE) err=stv0910_read_puncture_rate(STV0910_DEMOD_TOP, &puncture_rate);
-    if (err==ERROR_NONE) err=fifo_status_write(STATUS_PUNCTURE_RATE, puncture_rate);
+    if (err==ERROR_NONE) err=status_write(STATUS_PUNCTURE_RATE, puncture_rate);
 
     /* carrier frequency offset we are trying */
     if (err==ERROR_NONE) err=stv0910_read_car_freq(STV0910_DEMOD_TOP, &car_freq);
 
     /* note we now have the offset, so we need to add in the freq we tried to set it to */
     actual_freq=(uint32_t)(freq+(car_freq/1000));
-    if (err==ERROR_NONE) err=fifo_status_write(STATUS_CARRIER_FREQUENCY, actual_freq);
+    if (err==ERROR_NONE) err=status_write(STATUS_CARRIER_FREQUENCY, actual_freq);
 
     /* symbol rate we are trying */
     if (err==ERROR_NONE) err=stv0910_read_sr(STV0910_DEMOD_TOP, &sr);
-    if (err==ERROR_NONE) err=fifo_status_write(STATUS_SYMBOL_RATE, sr);
+    if (err==ERROR_NONE) err=status_write(STATUS_SYMBOL_RATE, sr);
 
     /* viterbi error rate */
     if (err==ERROR_NONE) err=stv0910_read_err_rate(STV0910_DEMOD_TOP, &vit_errs);
-    if (err==ERROR_NONE) err=fifo_status_write(STATUS_VITERBI_ERROR_RATE, vit_errs); 
+    if (err==ERROR_NONE) err=status_write(STATUS_VITERBI_ERROR_RATE, vit_errs); 
 
     /* BER */
     if (err==ERROR_NONE) err=stv0910_read_ber(STV0910_DEMOD_TOP, &ber);
-    if (err==ERROR_NONE) err=fifo_status_write(STATUS_BER, ber); 
+    if (err==ERROR_NONE) err=status_write(STATUS_BER, ber); 
 
     return err;
 }
@@ -317,33 +355,33 @@ int main(int argc, char *argv[]) {
 /* -------------------------------------------------------------------------------------------------- */
     uint8_t err;
     uint8_t state=STATE_INIT;
-    uint8_t usb_bus, usb_addr;
-    uint32_t sr;
     uint8_t demod_state;
     uint64_t last_status_loop;
-    char *ts_fifo;
-    char *status_fifo;
-    char *ip_addr;
-    int ip_port;
-    bool swap;
-    bool use_ip;
+    uint8_t (*status_write)(uint8_t,uint32_t);
 
 
     printf("Flow: main\n");
 
-    err=process_command_line(argc, argv,
-                             &freq, &sr, &ts_fifo, &status_fifo, &usb_bus, &usb_addr,
-                             &use_ip, &ip_addr, &ip_port,
-                             &swap);
+    err=process_command_line(argc, argv, &longmynd_config);
+
     /* first setup the fifos, udp socket, ftdi and usb */
-    if (err==ERROR_NONE) err=fifo_init(ts_fifo, status_fifo, use_ip);
-    if ((use_ip) && (err==ERROR_NONE)) err=udp_init(ip_addr, ip_port);
-    if (err==ERROR_NONE) err=ftdi_init(usb_bus, usb_addr);
+    if(longmynd_config.status_use_ip) {
+        if (err==ERROR_NONE) err=udp_status_init(longmynd_config.status_ip_addr, longmynd_config.status_ip_port);
+    } else {
+        if (err==ERROR_NONE) err=fifo_status_init(longmynd_config.status_fifo_path);
+    }
+    if(longmynd_config.ts_use_ip) {
+        if (err==ERROR_NONE) err=udp_ts_init(longmynd_config.ts_ip_addr, longmynd_config.ts_ip_port);
+    } else {
+        if (err==ERROR_NONE) err=fifo_ts_init(longmynd_config.ts_fifo_path);
+    }
+
+    if (err==ERROR_NONE) err=ftdi_init(longmynd_config.device_usb_bus, longmynd_config.device_usb_addr);
 
     loop_ts_vars_t loop_ts_vars = {
         .main_state_ptr = &state,
         .main_err_ptr = &err,
-        .use_ip = use_ip
+        .use_ip = longmynd_config.ts_use_ip
     };
 
     if(0 != pthread_create(&thread_ts, NULL, loop_ts, (void *)&loop_ts_vars))
@@ -351,21 +389,27 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Error creating loop_ts pthread\n");
     }
 
+    if(longmynd_config.status_use_ip) {
+        status_write = udp_status_write;
+    } else {
+        status_write = fifo_status_write;
+    }
+
     /* here is the main loop and state machine */
     while (err==ERROR_NONE) {
         last_status_loop = timestamp_ms();
         switch(state) {
             case STATE_INIT:
-                if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                if (err==ERROR_NONE) err=status_write(STATUS_STATE,state);
                 /* init all the modules */
                 if (err==ERROR_NONE) err=nim_init();
                 /* we are only using the one demodulator so set the other to 0 to turn it off */
-                if (err==ERROR_NONE) err=stv0910_init(sr,0);
+                if (err==ERROR_NONE) err=stv0910_init(longmynd_config.sr_requested,0);
                 /* we only use one of the tuners in STV6120 so freq for tuner 2=0 to turn it off */
-                if (err==ERROR_NONE) err=stv6120_init(freq,0,swap);
+                if (err==ERROR_NONE) err=stv6120_init(longmynd_config.freq_requested,0,longmynd_config.port_swap);
                 /* we turn on the LNA we want and turn the other off (if they exist) */
-                if (err==ERROR_NONE) err=stvvglna_init(NIM_INPUT_TOP,    (swap) ? STVVGLNA_OFF : STVVGLNA_ON,  &lna_ok);
-                if (err==ERROR_NONE) err=stvvglna_init(NIM_INPUT_BOTTOM, (swap) ? STVVGLNA_ON  : STVVGLNA_OFF, &lna_ok);
+                if (err==ERROR_NONE) err=stvvglna_init(NIM_INPUT_TOP,    (longmynd_config.port_swap) ? STVVGLNA_OFF : STVVGLNA_ON,  &lna_ok);
+                if (err==ERROR_NONE) err=stvvglna_init(NIM_INPUT_BOTTOM, (longmynd_config.port_swap) ? STVVGLNA_ON  : STVVGLNA_OFF, &lna_ok);
 
                 if (err!=ERROR_NONE) printf("ERROR: failed to init a device - is the NIM powered on?\n");
 
@@ -373,25 +417,25 @@ int main(int argc, char *argv[]) {
                 if (err==ERROR_NONE) {
                     err=stv0910_start_scan(STV0910_DEMOD_TOP);
                     state=STATE_DEMOD_HUNTING;
-                    if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                    if (err==ERROR_NONE) err=status_write(STATUS_STATE,state);
                 }
                break;
 
             case STATE_DEMOD_HUNTING:
-                if (err==ERROR_NONE) err=do_report();
+                if (err==ERROR_NONE) err=do_report(status_write);
                 /* process state changes */
                 if (err==ERROR_NONE) err=stv0910_read_scan_state(STV0910_DEMOD_TOP, &demod_state);
                 if (demod_state==DEMOD_FOUND_HEADER) {
                      state=STATE_DEMOD_FOUND_HEADER;
-                     if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                     if (err==ERROR_NONE) err=status_write(STATUS_STATE,state);
                 }
                 else if (demod_state==DEMOD_S2) {
                     state=STATE_DEMOD_S2;
-                    if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                    if (err==ERROR_NONE) err=status_write(STATUS_STATE,state);
                 }
                 else if (demod_state==DEMOD_S) {
                     state=STATE_DEMOD_S;
-                    if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                    if (err==ERROR_NONE) err=status_write(STATUS_STATE,state);
                 }
                 else if ((demod_state!=DEMOD_HUNTING) && (err==ERROR_NONE)) {
                     printf("ERROR: demodulator returned a bad scan state\n");
@@ -400,20 +444,20 @@ int main(int argc, char *argv[]) {
                 break;
 
             case STATE_DEMOD_FOUND_HEADER:
-                if (err==ERROR_NONE) err=do_report();
+                if (err==ERROR_NONE) err=do_report(status_write);
                 /* process state changes */
                 err=stv0910_read_scan_state(STV0910_DEMOD_TOP, &demod_state);
                 if (demod_state==DEMOD_HUNTING) {
                     state=STATE_DEMOD_HUNTING;
-                    if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                    if (err==ERROR_NONE) err=status_write(STATUS_STATE,state);
                 }
                 else if (demod_state==DEMOD_S2)  {
                     state=STATE_DEMOD_S2;
-                    if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                    if (err==ERROR_NONE) err=status_write(STATUS_STATE,state);
                 }
                 else if (demod_state==DEMOD_S)  {
                     state=STATE_DEMOD_S;
-                    if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                    if (err==ERROR_NONE) err=status_write(STATUS_STATE,state);
                 }
                 else if ((demod_state!=DEMOD_FOUND_HEADER) && (err==ERROR_NONE)) {
                     printf("ERROR: demodulator returned a bad scan state\n");
@@ -422,20 +466,20 @@ int main(int argc, char *argv[]) {
                 break;
 
             case STATE_DEMOD_S2:
-                if (err==ERROR_NONE) err=do_report();
+                if (err==ERROR_NONE) err=do_report(status_write);
                 /* process state changes */
                 err=stv0910_read_scan_state(STV0910_DEMOD_TOP, &demod_state);
                 if (demod_state==DEMOD_HUNTING) {
                     state=STATE_DEMOD_HUNTING;
-                    if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                    if (err==ERROR_NONE) err=status_write(STATUS_STATE,state);
                 }
                 else if (demod_state==DEMOD_FOUND_HEADER)  {
                     state=STATE_DEMOD_FOUND_HEADER;
-                    if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                    if (err==ERROR_NONE) err=status_write(STATUS_STATE,state);
                 }
                 else if (demod_state==DEMOD_S) {
                     state=STATE_DEMOD_S;
-                    if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                    if (err==ERROR_NONE) err=status_write(STATUS_STATE,state);
                 }
                 else if ((demod_state!=DEMOD_S2) && (err==ERROR_NONE)) {
                     printf("ERROR: demodulator returned a bad scan state\n");
@@ -444,20 +488,20 @@ int main(int argc, char *argv[]) {
                 break;
 
             case STATE_DEMOD_S:
-                if (err==ERROR_NONE) err=do_report();
+                if (err==ERROR_NONE) err=do_report(status_write);
                 /* process state changes */
                 err=stv0910_read_scan_state(STV0910_DEMOD_TOP, &demod_state);
                 if (demod_state==DEMOD_HUNTING) {
                     state=STATE_DEMOD_HUNTING;
-                    if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                    if (err==ERROR_NONE) err=status_write(STATUS_STATE,state);
                 }
                 else if (demod_state==DEMOD_FOUND_HEADER)  {
                     state=STATE_DEMOD_FOUND_HEADER;
-                    if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                    if (err==ERROR_NONE) err=status_write(STATUS_STATE,state);
                 }
                 else if (demod_state==DEMOD_S2) {
                     state=STATE_DEMOD_S2;
-                    if (err==ERROR_NONE) err=fifo_status_write(STATUS_STATE,state);
+                    if (err==ERROR_NONE) err=status_write(STATUS_STATE,state);
                 }
                 else if ((demod_state!=DEMOD_S) && (err==ERROR_NONE)) {
                     printf("ERROR: demodulator returned a bad scan state\n");

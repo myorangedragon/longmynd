@@ -43,8 +43,10 @@
 /* ----------------- GLOBALS ------------------------------------------------------------------------ */
 /* -------------------------------------------------------------------------------------------------- */
 
-struct sockaddr_in servaddr; 
-int sockfd; 
+struct sockaddr_in servaddr_status; 
+struct sockaddr_in servaddr_ts;
+int sockfd_status; 
+int sockfd_ts;
 
 /* -------------------------------------------------------------------------------------------------- */
 /* ----------------- DEFINES ------------------------------------------------------------------------ */
@@ -73,14 +75,14 @@ uint8_t udp_ts_write(uint8_t *buffer, uint32_t len) {
         if (remaining_len>510) {
              /* calculate where to start in the buffer and how many bytes to send */
              write_size=510;
-             sendto(sockfd, &buffer[len-remaining_len], write_size, 0,
-                                (const struct sockaddr *) &servaddr,  sizeof(servaddr)); 
+             sendto(sockfd_ts, &buffer[len-remaining_len], write_size, 0,
+                                (const struct sockaddr *) &servaddr_ts,  sizeof(struct sockaddr)); 
              /* note we skip over the 2 bytes inserted by the FTDI */
              remaining_len-=512;
         } else {
              write_size=remaining_len;
-             sendto(sockfd, &buffer[len-remaining_len], write_size, 0,
-                                (const struct sockaddr *) &servaddr,  sizeof(servaddr)); 
+             sendto(sockfd_ts, &buffer[len-remaining_len], write_size, 0,
+                                (const struct sockaddr *) &servaddr_ts,  sizeof(struct sockaddr)); 
              remaining_len-=write_size; /* should be 0 if all went well */
         }
     }
@@ -97,7 +99,25 @@ uint8_t udp_ts_write(uint8_t *buffer, uint32_t len) {
 }
 
 /* -------------------------------------------------------------------------------------------------- */
-uint8_t udp_init(char *udp_ip, int udp_port) {
+uint8_t udp_status_write(uint8_t message, uint32_t data) {
+/* -------------------------------------------------------------------------------------------------- */
+/* takes a buffer and writes out the contents to udp socket                                           */
+/* *buffer: the buffer that contains the data to be sent                                              */
+/*     len: the length (number of bytes) of data to be sent                                           */
+/*  return: error code                                                                                */
+/* -------------------------------------------------------------------------------------------------- */
+    uint8_t err=ERROR_NONE;
+    char status_message[30];
+
+    sprintf(status_message, "$%i,%i\n", message, data);
+
+    sendto(sockfd_status, status_message, strlen(status_message), 0, (const struct sockaddr *)&servaddr_status,  sizeof(struct sockaddr)); 
+
+    return err;
+}
+
+/* -------------------------------------------------------------------------------------------------- */
+static uint8_t udp_init(struct sockaddr_in *servaddr_ptr, int *sockfd_ptr, char *udp_ip, int udp_port) {
 /* -------------------------------------------------------------------------------------------------- */
 /* initialises the udp socket                                                                         */
 /*    udp_ip: the ip address (as a string) of the socket to open                                      */
@@ -108,25 +128,32 @@ uint8_t udp_init(char *udp_ip, int udp_port) {
   
     printf("Flow: UDP Init\n");
 
-
     /* Creat the socket  for IPv4 and UDP */
-    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) { 
+    if ((*sockfd_ptr = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) { 
         printf("ERROR: socket creation failed\n"); 
         err=ERROR_UDP_SOCKET_OPEN; 
     } else {
         /* setup all the destination fields */
-        memset(&servaddr, 0, sizeof(servaddr)); 
-        servaddr.sin_family = AF_INET; 
-        servaddr.sin_port = htons(udp_port); 
-        servaddr.sin_addr.s_addr = inet_addr(udp_ip); // INADDR_ANY; 
+        memset(servaddr_ptr, 0, sizeof(struct sockaddr_in)); 
+        servaddr_ptr->sin_family = AF_INET; 
+        servaddr_ptr->sin_port = htons(udp_port); 
+        servaddr_ptr->sin_addr.s_addr = inet_addr(udp_ip); // INADDR_ANY; 
     }
     if (err!=ERROR_NONE) printf("ERROR: UDP init\n");
 
     return err;
 }
 
+uint8_t udp_status_init(char *udp_ip, int udp_port) {
+    return udp_init(&servaddr_status, &sockfd_status, udp_ip, udp_port);
+}
+
+uint8_t udp_ts_init(char *udp_ip, int udp_port) {
+    return udp_init(&servaddr_ts, &sockfd_ts, udp_ip, udp_port);
+}
+
 /* -------------------------------------------------------------------------------------------------- */
-uint8_t udp_close() {
+uint8_t udp_close(void) {
 /* -------------------------------------------------------------------------------------------------- */
 /* closes the udp socket                                                                              */
 /* return: error code                                                                                 */
@@ -136,10 +163,15 @@ uint8_t udp_close() {
 
     printf("Flow: UDP Close\n");
 
-    ret=close(sockfd); 
+    ret=close(sockfd_ts); 
     if (ret!=0) {
         err=ERROR_UDP_CLOSE;
-        printf("ERROR: UDP close\n");
+        printf("ERROR: TS UDP close\n");
+    }
+    ret=close(sockfd_status); 
+    if (ret!=0) {
+        err=ERROR_UDP_CLOSE;
+        printf("ERROR: Status UDP close\n");
     }
 
     return err;
