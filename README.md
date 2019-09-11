@@ -58,6 +58,7 @@ To run longmynd without requiring root, unplug the minitiouner and then install 
                             When locked this is the symbol rate detected in the stream
     10  Viterbi Error Rate  Viterbi correction rate as a percentage * 100
     11  BER                 Bit Error Rate as a Percentage * 100
+    12  MER                 Modulation Error Ratio in dB * 10
 
 ## License
 
