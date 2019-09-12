@@ -13,6 +13,9 @@ debug: COPT = -Og
 debug: CFLAGS += -ggdb -fno-omit-frame-pointer
 debug: all
 
+werror: CFLAGS += -Werror
+werror: all
+
 fake_read:
 	@${CC} fake_read.c -o $@
 

@@ -16,4 +16,4 @@ git:
   depth: 1
 
 script:
-  - make
+  - make werror
