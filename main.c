@@ -122,6 +122,7 @@ typedef struct {
 
     bool new;
     pthread_mutex_t mutex;
+    pthread_cond_t signal;
 } longmynd_status_t;
 
 typedef struct {
@@ -133,14 +134,14 @@ typedef struct {
 } thread_vars_t;
 
 static longmynd_config_t longmynd_config = {
-    .ts_reset = true,
     .new = false,
     .mutex = PTHREAD_MUTEX_INITIALIZER
 };
 
 static longmynd_status_t longmynd_status = {
     .new = false,
-    .mutex = PTHREAD_MUTEX_INITIALIZER
+    .mutex = PTHREAD_MUTEX_INITIALIZER,
+    .signal = PTHREAD_COND_INITIALIZER
 };
 
 static pthread_t thread_ts;
@@ -290,6 +291,9 @@ uint8_t process_command_line(int argc, char *argv[], longmynd_config_t *config) 
         printf("Please refer to the longmynd manual page via:\n");
         printf("    man -l longmynd.1\n");
     }
+
+    config->new = true;
+
     return err;
 }
 
@@ -374,17 +378,16 @@ void *loop_ts(void *arg) {
     }
 
     while(*err == ERROR_NONE && *thread_vars->main_err_ptr == ERROR_NONE){
-        if(config->ts_reset)
-        {
+        /* If reset flag is active (eg. just started or changed station), then clear out the ts buffer */
+        if(config->ts_reset) {
             do {
                 if (*err==ERROR_NONE) *err=ftdi_usb_ts_read(buffer, &len);
             } while (*err==ERROR_NONE && len>2);
            config->ts_reset = false; 
         }
 
-
         *err=ftdi_usb_ts_read(buffer, &len);
-        //fprintf(stderr, "ts_read: %d\n", len);
+
         /* if there is ts data then we send it out to the required output. But, we have to lose the first 2 bytes */
         /* that are the usual FTDI 2 byte response and not part of the TS */
         if ((*err==ERROR_NONE) && (len>2)) {
@@ -400,118 +403,130 @@ void *loop_i2c(void *arg) {
 /* -------------------------------------------------------------------------------------------------- */
 /* Runs a loop to configure and monitor the Minitiouner Receiver                                      */
 /*  Configuration is read from the configuration struct                                               */
-/*  Status is written to the status struct, and the pthread condition variable triggered on update    */
+/*  Status is written to the status struct                                                            */
 /* -------------------------------------------------------------------------------------------------- */
     thread_vars_t *thread_vars=(thread_vars_t *)arg;
-
     uint8_t *err = &thread_vars->thread_err;
-    longmynd_status_t *status = thread_vars->status;
-    longmynd_config_t *config = thread_vars->config;
 
     *err=ERROR_NONE;
 
+    longmynd_config_t config_cpy;
+    longmynd_status_t status_cpy;
+
     uint64_t last_i2c_loop = timestamp_ms();
     while (*err==ERROR_NONE && *thread_vars->main_err_ptr==ERROR_NONE) {
-        /* Status Report Loop Timer */
+        /* Receiver State Machine Loop Timer */
         do {
             /* Sleep for at least 10ms */
             usleep(10*1000);
         } while (timestamp_ms() < (last_i2c_loop + I2C_LOOP_MS));
 
-        pthread_mutex_lock(&status->mutex);
-        status->frequency_requested = config->freq_requested;
-        switch(status->state) {
-            case STATE_INIT:
-                /* init all the modules */
-                if (*err==ERROR_NONE) *err=nim_init();
-                /* we are only using the one demodulator so set the other to 0 to turn it off */
-                if (*err==ERROR_NONE) *err=stv0910_init(config->sr_requested,0);
-                /* we only use one of the tuners in STV6120 so freq for tuner 2=0 to turn it off */
-                if (*err==ERROR_NONE) *err=stv6120_init(config->freq_requested,0,config->port_swap);
-                /* we turn on the LNA we want and turn the other off (if they exist) */
-                if (*err==ERROR_NONE) *err=stvvglna_init(NIM_INPUT_TOP,    (config->port_swap) ? STVVGLNA_OFF : STVVGLNA_ON,  &status->lna_ok);
-                if (*err==ERROR_NONE) *err=stvvglna_init(NIM_INPUT_BOTTOM, (config->port_swap) ? STVVGLNA_ON  : STVVGLNA_OFF, &status->lna_ok);
+        /* Check if there's a new config */
+        if(thread_vars->config->new)
+        {
+            /* Lock config struct */
+            pthread_mutex_lock(&thread_vars->config->mutex);
+            /* Clone status struct locally */
+            memcpy(&config_cpy, thread_vars->config, sizeof(longmynd_config_t));
+            /* Clear new config flag */
+            thread_vars->config->new = false;
+            /* Set flag to clear ts buffer */
+            thread_vars->config->ts_reset = true;
+            pthread_mutex_unlock(&thread_vars->config->mutex);
 
-                if (*err!=ERROR_NONE) printf("ERROR: failed to init a device - is the NIM powered on?\n");
+            status_cpy.frequency_requested = config_cpy.freq_requested;
+            /* init all the modules */
+            if (*err==ERROR_NONE) *err=nim_init();
+            /* we are only using the one demodulator so set the other to 0 to turn it off */
+            if (*err==ERROR_NONE) *err=stv0910_init(config_cpy.sr_requested,0);
+            /* we only use one of the tuners in STV6120 so freq for tuner 2=0 to turn it off */
+            if (*err==ERROR_NONE) *err=stv6120_init(config_cpy.freq_requested,0,config_cpy.port_swap);
+            /* we turn on the LNA we want and turn the other off (if they exist) */
+            if (*err==ERROR_NONE) *err=stvvglna_init(NIM_INPUT_TOP,    (config_cpy.port_swap) ? STVVGLNA_OFF : STVVGLNA_ON,  &status_cpy.lna_ok);
+            if (*err==ERROR_NONE) *err=stvvglna_init(NIM_INPUT_BOTTOM, (config_cpy.port_swap) ? STVVGLNA_ON  : STVVGLNA_OFF, &status_cpy.lna_ok);
 
-                /* now start the whole thing scanning for the signal */
-                if (*err==ERROR_NONE) {
-                    *err=stv0910_start_scan(STV0910_DEMOD_TOP);
-                    status->state=STATE_DEMOD_HUNTING;
-                }
-               break;
+            if (*err!=ERROR_NONE) printf("ERROR: failed to init a device - is the NIM powered on?\n");
 
+            /* now start the whole thing scanning for the signal */
+            if (*err==ERROR_NONE) {
+                *err=stv0910_start_scan(STV0910_DEMOD_TOP);
+                status_cpy.state=STATE_DEMOD_HUNTING;
+            }
+        }
+
+        /* Main receiver state machine */
+        switch(status_cpy.state) {
             case STATE_DEMOD_HUNTING:
-                if (*err==ERROR_NONE) *err=do_report(status);
+                if (*err==ERROR_NONE) *err=do_report(&status_cpy);
                 /* process state changes */
-                if (*err==ERROR_NONE) *err=stv0910_read_scan_state(STV0910_DEMOD_TOP, &status->demod_state);
-                if (status->demod_state==DEMOD_FOUND_HEADER) {
-                    status->state=STATE_DEMOD_FOUND_HEADER;
+                if (*err==ERROR_NONE) *err=stv0910_read_scan_state(STV0910_DEMOD_TOP, &status_cpy.demod_state);
+                if (status_cpy.demod_state==DEMOD_FOUND_HEADER) {
+                    status_cpy.state=STATE_DEMOD_FOUND_HEADER;
                 }
-                else if (status->demod_state==DEMOD_S2) {
-                    status->state=STATE_DEMOD_S2;
+                else if (status_cpy.demod_state==DEMOD_S2) {
+                    status_cpy.state=STATE_DEMOD_S2;
                 }
-                else if (status->demod_state==DEMOD_S) {
-                    status->state=STATE_DEMOD_S;
+                else if (status_cpy.demod_state==DEMOD_S) {
+                    status_cpy.state=STATE_DEMOD_S;
                 }
-                else if ((status->demod_state!=DEMOD_HUNTING) && (*err==ERROR_NONE)) {
+                else if ((status_cpy.demod_state!=DEMOD_HUNTING) && (*err==ERROR_NONE)) {
                     printf("ERROR: demodulator returned a bad scan state\n");
                     *err=ERROR_BAD_DEMOD_HUNT_STATE; /* not allowed to have any other states */
                 } /* no need for another else, all states covered */
                 break;
 
             case STATE_DEMOD_FOUND_HEADER:
-                if (*err==ERROR_NONE) *err=do_report(status);
+                if (*err==ERROR_NONE) *err=do_report(&status_cpy);
                 /* process state changes */
-                *err=stv0910_read_scan_state(STV0910_DEMOD_TOP, &status->demod_state);
-                if (status->demod_state==DEMOD_HUNTING) {
-                    status->state=STATE_DEMOD_HUNTING;
+                *err=stv0910_read_scan_state(STV0910_DEMOD_TOP, &status_cpy.demod_state);
+                if (status_cpy.demod_state==DEMOD_HUNTING) {
+                    status_cpy.state=STATE_DEMOD_HUNTING;
                 }
-                else if (status->demod_state==DEMOD_S2)  {
-                    status->state=STATE_DEMOD_S2;
+                else if (status_cpy.demod_state==DEMOD_S2)  {
+                    status_cpy.state=STATE_DEMOD_S2;
                 }
-                else if (status->demod_state==DEMOD_S)  {
-                    status->state=STATE_DEMOD_S;
+                else if (status_cpy.demod_state==DEMOD_S)  {
+                    status_cpy.state=STATE_DEMOD_S;
                 }
-                else if ((status->demod_state!=DEMOD_FOUND_HEADER) && (*err==ERROR_NONE)) {
+                else if ((status_cpy.demod_state!=DEMOD_FOUND_HEADER) && (*err==ERROR_NONE)) {
                     printf("ERROR: demodulator returned a bad scan state\n");
                     *err=ERROR_BAD_DEMOD_HUNT_STATE; /* not allowed to have any other states */
                 } /* no need for another else, all states covered */
                 break;
 
             case STATE_DEMOD_S2:
-                if (*err==ERROR_NONE) *err=do_report(status);
+                if (*err==ERROR_NONE) *err=do_report(&status_cpy);
                 /* process state changes */
-                *err=stv0910_read_scan_state(STV0910_DEMOD_TOP, &status->demod_state);
-                if (status->demod_state==DEMOD_HUNTING) {
-                    status->state=STATE_DEMOD_HUNTING;
+                *err=stv0910_read_scan_state(STV0910_DEMOD_TOP, &status_cpy.demod_state);
+                if (status_cpy.demod_state==DEMOD_HUNTING) {
+                    status_cpy.state=STATE_DEMOD_HUNTING;
                 }
-                else if (status->demod_state==DEMOD_FOUND_HEADER)  {
-                    status->state=STATE_DEMOD_FOUND_HEADER;
+                else if (status_cpy.demod_state==DEMOD_FOUND_HEADER)  {
+                    status_cpy.state=STATE_DEMOD_FOUND_HEADER;
                 }
-                else if (status->demod_state==DEMOD_S) {
-                    status->state=STATE_DEMOD_S;
+                else if (status_cpy.demod_state==DEMOD_S) {
+                    status_cpy.state=STATE_DEMOD_S;
                 }
-                else if ((status->demod_state!=DEMOD_S2) && (*err==ERROR_NONE)) {
+                else if ((status_cpy.demod_state!=DEMOD_S2) && (*err==ERROR_NONE)) {
                     printf("ERROR: demodulator returned a bad scan state\n");
                     *err=ERROR_BAD_DEMOD_HUNT_STATE; /* not allowed to have any other states */
                 } /* no need for another else, all states covered */
                 break;
 
             case STATE_DEMOD_S:
-                if (*err==ERROR_NONE) *err=do_report(status);
+                if (*err==ERROR_NONE) *err=do_report(&status_cpy);
                 /* process state changes */
-                *err=stv0910_read_scan_state(STV0910_DEMOD_TOP, &status->demod_state);
-                if (status->demod_state==DEMOD_HUNTING) {
-                    status->state=STATE_DEMOD_HUNTING;
+                *err=stv0910_read_scan_state(STV0910_DEMOD_TOP, &status_cpy.demod_state);
+                if (status_cpy.demod_state==DEMOD_HUNTING) {
+                    status_cpy.state=STATE_DEMOD_HUNTING;
                 }
-                else if (status->demod_state==DEMOD_FOUND_HEADER)  {
-                    status->state=STATE_DEMOD_FOUND_HEADER;
+                else if (status_cpy.demod_state==DEMOD_FOUND_HEADER)  {
+                    status_cpy.state=STATE_DEMOD_FOUND_HEADER;
                 }
-                else if (status->demod_state==DEMOD_S2) {
-                    status->state=STATE_DEMOD_S2;
+                else if (status_cpy.demod_state==DEMOD_S2) {
+                    status_cpy.state=STATE_DEMOD_S2;
                 }
-                else if ((status->demod_state!=DEMOD_S) && (*err==ERROR_NONE)) {
+                else if ((status_cpy.demod_state!=DEMOD_S) && (*err==ERROR_NONE)) {
                     printf("ERROR: demodulator returned a bad scan state\n");
                     *err=ERROR_BAD_DEMOD_HUNT_STATE; /* not allowed to have any other states */
                 } /* no need for another else, all states covered */
@@ -522,8 +537,14 @@ void *loop_i2c(void *arg) {
                 break;
         }
 
-        status->new = true;
-        pthread_mutex_unlock(&status->mutex);
+        /* Copy local status data over global object */
+        pthread_mutex_lock(&thread_vars->status->mutex);
+        memcpy(thread_vars->status, &status_cpy, sizeof(longmynd_status_t));
+        /* Set new data flag */
+        thread_vars->status->new = true;
+        /* Trigger pthread signal */
+        pthread_cond_signal(&thread_vars->status->signal);
+        pthread_mutex_unlock(&thread_vars->status->mutex);
 
         last_i2c_loop = timestamp_ms();
     }
@@ -618,7 +639,7 @@ int main(int argc, char *argv[]) {
 
     longmynd_status_t longmynd_status_cpy;
 
-    while (err==ERROR_NONE && thread_vars_ts.thread_err==ERROR_NONE && thread_vars_i2c.thread_err==ERROR_NONE) {
+    while (err==ERROR_NONE) {
         /* Test if new status data is available */
         if(longmynd_status.new) {
             /* Acquire lock on status struct */
@@ -635,9 +656,13 @@ int main(int argc, char *argv[]) {
             /* Sleep 10ms */
             usleep(10*1000);
         }
+        /* Check for errors on threads */
+        if(err==ERROR_NONE &&
+            (thread_vars_ts.thread_err!=ERROR_NONE
+            || thread_vars_i2c.thread_err!=ERROR_NONE)) {
+            err=ERROR_THREAD_ERROR;
+        }
     }
-    
-    if(err==ERROR_NONE) err=ERROR_THREAD_ERROR;
 
     /* Exited, wait for child threads to exit */
     pthread_join(thread_ts, NULL);
