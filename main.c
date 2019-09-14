@@ -76,9 +76,6 @@
 /* Milliseconds between each i2c control loop */
 #define I2C_LOOP_MS  100
 
-/* Milliseconds between each status report loop */
-#define STATUS_LOOP_MS  100
-
 /* -------------------------------------------------------------------------------------------------- */
 /* ----------------- GLOBALS ------------------------------------------------------------------------ */
 /* -------------------------------------------------------------------------------------------------- */
@@ -124,7 +121,6 @@ typedef struct {
     uint8_t puncture_rate;
 
     bool new;
-    pthread_cond_t signal;
     pthread_mutex_t mutex;
 } longmynd_status_t;
 
@@ -144,7 +140,6 @@ static longmynd_config_t longmynd_config = {
 
 static longmynd_status_t longmynd_status = {
     .new = false,
-    .signal = PTHREAD_COND_INITIALIZER,
     .mutex = PTHREAD_MUTEX_INITIALIZER
 };
 
@@ -356,7 +351,6 @@ void *loop_ts(void *arg) {
 /* -------------------------------------------------------------------------------------------------- */
     thread_vars_t *thread_vars=(thread_vars_t *)arg;
     uint8_t *err = &thread_vars->thread_err;
-    longmynd_status_t *status = thread_vars->status;
     longmynd_config_t *config = thread_vars->config;
 
     uint8_t *buffer;
@@ -397,8 +391,6 @@ void *loop_ts(void *arg) {
             ts_write(&buffer[2],len-2);
         }
     }
-
-    pthread_cond_signal(&status->signal);
 
     return NULL;
 }
@@ -531,7 +523,6 @@ void *loop_i2c(void *arg) {
         }
 
         status->new = true;
-        pthread_cond_signal(&status->signal);
         pthread_mutex_unlock(&status->mutex);
 
         last_i2c_loop = timestamp_ms();
@@ -627,26 +618,23 @@ int main(int argc, char *argv[]) {
 
     longmynd_status_t longmynd_status_cpy;
 
-    uint64_t last_status_loop = timestamp_ms();
     while (err==ERROR_NONE && thread_vars_ts.thread_err==ERROR_NONE && thread_vars_i2c.thread_err==ERROR_NONE) {
-        /* Status Report Loop Timer */
-        while (timestamp_ms() < (last_status_loop + STATUS_LOOP_MS)) {
+        /* Test if new status data is available */
+        if(longmynd_status.new) {
+            /* Acquire lock on status struct */
+            pthread_mutex_lock(&longmynd_status.mutex);
+            /* Clone status struct locally */
+            memcpy(&longmynd_status_cpy, &longmynd_status, sizeof(longmynd_status_t));
+            /* Clear new flag on status struct */
+            longmynd_status.new = false;
+            pthread_mutex_unlock(&longmynd_status.mutex);
+
+            /* Send all status via configured output interface from local copy */
+            err=status_all_write(&longmynd_status_cpy, status_write);
+        } else {
             /* Sleep 10ms */
             usleep(10*1000);
         }
-        /* Wait to copy status struct from i2c thread when available */ 
-        pthread_mutex_lock(&longmynd_status.mutex);
-        while(!longmynd_status.new
-            && thread_vars_ts.thread_err==ERROR_NONE && thread_vars_i2c.thread_err==ERROR_NONE)
-        {
-            pthread_cond_wait(&longmynd_status.signal, &longmynd_status.mutex);
-        }
-        memcpy(&longmynd_status_cpy, &longmynd_status, sizeof(longmynd_status_t));
-        longmynd_status.new = false;
-        pthread_mutex_unlock(&longmynd_status.mutex);
-
-        err=status_all_write(&longmynd_status_cpy, status_write);
-        last_status_loop = timestamp_ms();
     }
     
     if(err==ERROR_NONE) err=ERROR_THREAD_ERROR;
