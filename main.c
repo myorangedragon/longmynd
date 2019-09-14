@@ -625,7 +625,13 @@ int main(int argc, char *argv[]) {
 
     longmynd_status_t longmynd_status_cpy;
 
+    uint64_t last_status_loop = timestamp_ms();
     while (err==ERROR_NONE && thread_vars_ts.thread_err==ERROR_NONE && thread_vars_i2c.thread_err==ERROR_NONE) {
+        /* Status Report Loop Timer */
+        while (timestamp_ms() < (last_status_loop + STATUS_LOOP_MS)) {
+            /* Sleep 10ms */
+            usleep(10*1000);
+        }
         /* Wait to copy status struct from i2c thread when available */ 
         pthread_mutex_lock(&longmynd_status.mutex);
         while(!longmynd_status.new
@@ -638,6 +644,7 @@ int main(int argc, char *argv[]) {
         pthread_mutex_unlock(&longmynd_status.mutex);
 
         err=status_all_write(&longmynd_status_cpy, status_write);
+        last_status_loop = timestamp_ms();
     }
     
     if(err==ERROR_NONE) err=ERROR_THREAD_ERROR;
