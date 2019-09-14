@@ -342,6 +342,8 @@ uint8_t do_report(longmynd_status_t *status) {
     /* MER */
     if(status->state==STATE_DEMOD_S2) {
         if (err==ERROR_NONE) err=stv0910_read_dvbs2_mer(STV0910_DEMOD_TOP, &status->modulation_error_rate);
+    } else {
+        status->modulation_error_rate = 0;
     }
 
     return err;
