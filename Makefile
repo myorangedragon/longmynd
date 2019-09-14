@@ -17,6 +17,7 @@ werror: CFLAGS += -Werror
 werror: all
 
 fake_read:
+	@echo "  CC     "$@
 	@${CC} fake_read.c -o $@
 
 $(BIN): ${OBJ}
