@@ -254,7 +254,7 @@ uint8_t ftdi_usb_init(uint8_t usb_bus, uint8_t usb_addr, uint16_t vid, uint16_t 
     }
 
     /* turn on debug */
-    libusb_set_debug(usb_context,3);
+    libusb_set_option(usb_context, LIBUSB_LOG_LEVEL_INFO);
 
     /* now we need to decide if we are opening by VID and PID or by device number */
     if ((err==ERROR_NONE) && (usb_bus==0) && (usb_addr==0)) {
