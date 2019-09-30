@@ -18,19 +18,40 @@ To run longmynd without requiring root, unplug the minitiouner and then install 
 
 ## Run
 
-    Please refer to the longmynd manual page via:
-         man -l longmynd.1
+Please refer to the longmynd manual page via:
+
+```
+man -l longmynd.1
+```
+
+## Standalone
+
+If running longmynd standalone (i.e. not integrated with the Portsdown software), you must create the status FIFO and (if you plan to use it) the TS FIFO:
+
+```
+mkfifo longmynd_main_status
+mkfifo longmynd_main_ts
+```
+
+The test harness `fake_read` or a similar process must be running to consume the output of the status FIFO:
+
+```
+./fake_read &
+```
+
+A video player (e.g. VLC) must be running to consume the output of the TS FIFO. 
+
 ## Output
 
     The status fifo is filled with status information as and when it becomes available.
     The format of the status information is:
     
          $n,m<cr>
-	 
+     
     Where:
          n = identifier integer of Status message
          m = integer value associated with this status message
-  
+      
     And the values of n and m are defined as:
     
     ID  Meaning             Value and Units
@@ -58,6 +79,7 @@ To run longmynd without requiring root, unplug the minitiouner and then install 
                             When locked this is the symbol rate detected in the stream
     10  Viterbi Error Rate  Viterbi correction rate as a percentage * 100
     11  BER                 Bit Error Rate as a Percentage * 100
+    12  MER                 Modulation Error Ratio in dB * 10
 
 ## License
 

@@ -117,7 +117,7 @@ uint8_t fifo_status_write(uint8_t message, uint32_t data) {
 }
 
 /* -------------------------------------------------------------------------------------------------- */
-uint8_t fifo_init(char *ts_fifo, char *status_fifo, bool ignore_ts_fifo) {
+static uint8_t fifo_init(int *fd_ptr, char *fifo_path) {
 /* -------------------------------------------------------------------------------------------------- */
 /* initialises the ts and status fifos                                                                */
 /*     ts_fifo: the name of the fifo to use for the TS                                                */
@@ -129,28 +129,25 @@ uint8_t fifo_init(char *ts_fifo, char *status_fifo, bool ignore_ts_fifo) {
     printf("Flow: Fifo Init\n");
 
     /* if we are using the TS FIFO then set it up first */
-    if (!ignore_ts_fifo) {
-        fd_ts_fifo = open(ts_fifo, O_WRONLY); 
-        if (err==ERROR_NONE) {
-            if (fd_ts_fifo<0) {
-                printf("ERROR: Failed to open ts fifo %s\n",ts_fifo);
-                err=ERROR_OPEN_TS_FIFO;
-            } else printf("      Status: opened ts fifo ok\n");
-        }
-    }
-
-    /* now open the status output fifo */
-    fd_status_fifo = open(status_fifo, O_WRONLY); 
+    *fd_ptr = open(fifo_path, O_WRONLY); 
     if (err==ERROR_NONE) {
-        if (fd_status_fifo<0) {
-        printf("ERROR: Failed to open status fifo %s\n",status_fifo);
-        err=ERROR_OPEN_STATUS_FIFO;
-        } else printf("      Status: opened status fifo ok\n");
+        if (*fd_ptr<0) {
+            printf("ERROR: Failed to open fifo %s\n",fifo_path);
+            err=ERROR_OPEN_TS_FIFO;
+        } else printf("      Status: opened fifo ok\n");
     }
 
     if (err!=ERROR_NONE) printf("ERROR: fifo init\n");
 
     return err;
+}
+
+uint8_t fifo_ts_init(char *fifo_path) {
+    return fifo_init(&fd_ts_fifo, fifo_path);
+}
+
+uint8_t fifo_status_init(char *fifo_path) {
+    return fifo_init(&fd_status_fifo, fifo_path);
 }
 
 /* -------------------------------------------------------------------------------------------------- */

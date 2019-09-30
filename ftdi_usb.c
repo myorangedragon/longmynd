@@ -96,8 +96,10 @@ enum ftdi_mpsse_mode
     BITMODE_SYNCFF = 0x40,    /* Single Channel Synchronous FIFO mode, available on 2232H chips */
 };
 
-static libusb_device_handle *usb_device_handle;
-static libusb_context *usb_context;
+static libusb_device_handle *usb_device_handle_i2c; // interface 0, endpoints: 0x81, 0x02
+static libusb_device_handle *usb_device_handle_ts; // interface 1, endpoints: 0x83, 0x04
+static libusb_context *usb_context_i2c;
+static libusb_context *usb_context_ts;
 
 /* -------------------------------------------------------------------------------------------------- */
 /* ----------------- ROUTINES ----------------------------------------------------------------------- */
@@ -115,7 +117,7 @@ uint8_t ftdi_usb_i2c_write( uint8_t *buffer, uint8_t len ){
     int sent=0;
     int res;
 
-    res=libusb_bulk_transfer(usb_device_handle, 0x02, buffer, len, &sent, USB_TIMEOUT);
+    res=libusb_bulk_transfer(usb_device_handle_i2c, 0x02, buffer, len, &sent, USB_TIMEOUT);
     if (res<0) {
         printf("ERROR: USB Cmd Write failure %d\n",res);
         err=ERROR_FTDI_USB_CMD;
@@ -153,7 +155,7 @@ uint8_t ftdi_usb_i2c_read( uint8_t **buffer) {
         /* the data may not be available immediatly so try a few times until it appears (or we error) */
         for (n=0; n<FTDI_USB_READ_RETRIES; n++) {
             /* we use endpoint 0x81 for the i2c traffic */
-            if ((res=libusb_bulk_transfer(usb_device_handle, 0x81, rx_chunk, FTDI_RX_CHUNK_SIZE, &rxed, USB_TIMEOUT))<0) {
+            if ((res=libusb_bulk_transfer(usb_device_handle_i2c, 0x81, rx_chunk, FTDI_RX_CHUNK_SIZE, &rxed, USB_TIMEOUT))<0) {
                 printf("ERROR: USB Cmd Read failure %d\n",res);
                 err=ERROR_FTDI_USB_CMD;
                 break;
@@ -174,7 +176,7 @@ uint8_t ftdi_usb_i2c_read( uint8_t **buffer) {
 }
 
 /* -------------------------------------------------------------------------------------------------- */
-uint8_t ftdi_usb_set_mpsse_mode(void){
+static uint8_t ftdi_usb_set_mpsse_mode(libusb_device_handle *_device_handle){
 /* -------------------------------------------------------------------------------------------------- */
 /* setup the FTDI USB interface and MPSEE mode                                                        */
 /* return : error code                                                                                */
@@ -186,26 +188,26 @@ uint8_t ftdi_usb_set_mpsse_mode(void){
     printf("Flow: FTDI set mpsse mode\n");
 
     /* clear out the receive buffers */
-    if ((res=libusb_control_transfer(usb_device_handle, FTDI_DEVICE_OUT_REQTYPE, SIO_RESET_REQUEST,
+    if ((res=libusb_control_transfer(_device_handle, FTDI_DEVICE_OUT_REQTYPE, SIO_RESET_REQUEST,
                                             SIO_RESET_PURGE_RX, 1, NULL, 0, USB_TIMEOUT))<0) {
         printf("ERROR: USB RX Purge failed %d",res);
         err=ERROR_MPSSE;
     }   
 
     /* clear out the transmit buffers */
-    if ((res=libusb_control_transfer(usb_device_handle, FTDI_DEVICE_OUT_REQTYPE, SIO_RESET_REQUEST,
+    if ((res=libusb_control_transfer(_device_handle, FTDI_DEVICE_OUT_REQTYPE, SIO_RESET_REQUEST,
                                             SIO_RESET_PURGE_TX, 1, NULL, 0, USB_TIMEOUT))<0) {
         printf("ERROR: USB TX Purge failed %d",res);
         err=ERROR_MPSSE;
     }
-    if ((res=libusb_control_transfer(usb_device_handle, FTDI_DEVICE_OUT_REQTYPE, SIO_RESET_REQUEST,
+    if ((res=libusb_control_transfer(_device_handle, FTDI_DEVICE_OUT_REQTYPE, SIO_RESET_REQUEST,
                                            SIO_RESET_SIO,      1, NULL, 0, USB_TIMEOUT))<0) {
         printf("ERROR: USB Reset failed %d",res);
         err=ERROR_MPSSE;
     }
 
     /* set the latence of the bus */
-    if ((res=libusb_control_transfer(usb_device_handle, FTDI_DEVICE_OUT_REQTYPE, SIO_SET_LATENCY_TIMER_REQUEST,
+    if ((res=libusb_control_transfer(_device_handle, FTDI_DEVICE_OUT_REQTYPE, SIO_SET_LATENCY_TIMER_REQUEST,
                                          LATENCY_MS, 1, NULL, 0, USB_TIMEOUT))<0) {
         printf("ERROR: USB Set Latency failed %d",res);
         err=ERROR_MPSSE;
@@ -213,14 +215,14 @@ uint8_t ftdi_usb_set_mpsse_mode(void){
 
     /* set the bit modes */
     val = (BITMODE_RESET<<8);
-    if ((res=libusb_control_transfer(usb_device_handle, FTDI_DEVICE_OUT_REQTYPE, SIO_SET_BITMODE_REQUEST,
+    if ((res=libusb_control_transfer(_device_handle, FTDI_DEVICE_OUT_REQTYPE, SIO_SET_BITMODE_REQUEST,
                                         val, 1, NULL, 0, USB_TIMEOUT))<0) {
         printf("USB Reset Bitmode failed %d\n",res);
         err=ERROR_MPSSE;
     }
 
     val = (BITMODE_MPSSE<<8);
-    if ((res=libusb_control_transfer(usb_device_handle, FTDI_DEVICE_OUT_REQTYPE, SIO_SET_BITMODE_REQUEST,
+    if ((res=libusb_control_transfer(_device_handle, FTDI_DEVICE_OUT_REQTYPE, SIO_SET_BITMODE_REQUEST,
                                         val, 1, NULL, 0, USB_TIMEOUT))<0) {
         printf("USB Set MPSSE failed %d\n",res);
         err=ERROR_MPSSE;
@@ -232,8 +234,16 @@ uint8_t ftdi_usb_set_mpsse_mode(void){
 
 }
 
+uint8_t ftdi_usb_set_mpsse_mode_i2c(void){
+    return ftdi_usb_set_mpsse_mode(usb_device_handle_i2c);
+}
+
+uint8_t ftdi_usb_set_mpsse_mode_ts(void){
+    return ftdi_usb_set_mpsse_mode(usb_device_handle_ts);
+}
+
 /* -------------------------------------------------------------------------------------------------- */
-uint8_t ftdi_usb_init(uint8_t usb_bus, uint8_t usb_addr, uint16_t vid, uint16_t pid) {
+static uint8_t ftdi_usb_init(libusb_context **usb_context_ptr, libusb_device_handle **usb_device_handle_ptr, int interface_num, uint8_t usb_bus, uint8_t usb_addr, uint16_t vid, uint16_t pid) {
 /* -------------------------------------------------------------------------------------------------- */
 /* initialise the usb device of choice (or via vid/pid if no USB selected)                            */
 /* return : error code                                                                                */
@@ -248,7 +258,7 @@ uint8_t ftdi_usb_init(uint8_t usb_bus, uint8_t usb_addr, uint16_t vid, uint16_t 
 
     printf("Flow: FTDI USB init\n");
 
-    if (libusb_init(&usb_context)<0) {
+    if (libusb_init(usb_context_ptr)<0) {
     	printf("ERROR: Unable to initialise LIBUSB\n");
         err=ERROR_FTDI_USB_INIT_LIBUSB;
     }
@@ -259,10 +269,11 @@ uint8_t ftdi_usb_init(uint8_t usb_bus, uint8_t usb_addr, uint16_t vid, uint16_t 
     #else
     libusb_set_debug(usb_context, LIBUSB_LOG_LEVEL_INFO);
     #endif
+
     /* now we need to decide if we are opening by VID and PID or by device number */
     if ((err==ERROR_NONE) && (usb_bus==0) && (usb_addr==0)) {
         /* if we are using vid and pid it is easy */
-        if ((usb_device_handle = libusb_open_device_with_vid_pid(usb_context, vid, pid))==NULL) {
+        if ((*usb_device_handle_ptr = libusb_open_device_with_vid_pid(*usb_context_ptr, vid, pid))==NULL) {
             printf("ERROR: Unable to open device with VID and PID\n");
             printf("       Is the USB cable plugged in?\n");
             err=ERROR_FTDI_USB_VID_PID;
@@ -272,7 +283,7 @@ uint8_t ftdi_usb_init(uint8_t usb_bus, uint8_t usb_addr, uint16_t vid, uint16_t 
     /* being asked to open the right one. sTto do this we get a list of all the USB devices on the system */
     } else if (err==ERROR_NONE) { 
         printf("Flow: Searching for bus/device=%i,%i\n",usb_bus,usb_addr);
-        count=libusb_get_device_list(usb_context, &usb_device_list);
+        count=libusb_get_device_list(*usb_context_ptr, &usb_device_list);
         if (count<=0) {
             printf("ERROR: failed to get the list of devices\n");
             err=ERROR_FTDI_USB_DEVICE_LIST;
@@ -297,7 +308,7 @@ uint8_t ftdi_usb_init(uint8_t usb_bus, uint8_t usb_addr, uint16_t vid, uint16_t 
             /* if we have found our one then we can start using it */
             if ((usb_descriptor.idVendor==vid) && (usb_descriptor.idProduct==pid)) {
                 /* first we open it */
-                error_code=libusb_open(usb_candidate_device, &usb_device_handle);
+                error_code=libusb_open(usb_candidate_device, usb_device_handle_ptr);
                 if (error_code==0) printf("      Status: successfully opened USB Device %i,%i\n",
                                                                         usb_bus,usb_addr);
                 else {
@@ -317,19 +328,26 @@ uint8_t ftdi_usb_init(uint8_t usb_bus, uint8_t usb_addr, uint16_t vid, uint16_t 
         /* now we should have the device handle of the device we are going to us */
         /* we have two interfaces on the ftdi device (0 and 1) */
         /* so next we make sure we are the only people using this device and this */
-        if (libusb_kernel_driver_active(usb_device_handle, 0)) libusb_detach_kernel_driver(usb_device_handle, 0);
-        if (libusb_kernel_driver_active(usb_device_handle, 1)) libusb_detach_kernel_driver(usb_device_handle, 1);
+        if (libusb_kernel_driver_active(*usb_device_handle_ptr, interface_num)) libusb_detach_kernel_driver(*usb_device_handle_ptr, interface_num);
 
         /* finally we claim both interfaces as ours */
-        if (libusb_claim_interface(usb_device_handle, 0)<0 || libusb_claim_interface(usb_device_handle, 1)<0) {
-            libusb_close(usb_device_handle);
-            libusb_exit(usb_context);
+        if (libusb_claim_interface(*usb_device_handle_ptr, interface_num)<0) {
+            libusb_close(*usb_device_handle_ptr);
+            libusb_exit(*usb_context_ptr);
         	printf("ERROR: Unable to claim interface\n");
             err=ERROR_FTDI_USB_CLAIM;
         }
     }
 
     return err;
+}
+
+uint8_t ftdi_usb_init_i2c(uint8_t usb_bus, uint8_t usb_addr, uint16_t vid, uint16_t pid) {
+    return ftdi_usb_init(&usb_context_i2c, &usb_device_handle_i2c, 0, usb_bus, usb_addr, vid, pid);
+}
+
+uint8_t ftdi_usb_init_ts(uint8_t usb_bus, uint8_t usb_addr, uint16_t vid, uint16_t pid) {
+    return ftdi_usb_init(&usb_context_ts, &usb_device_handle_ts, 1, usb_bus, usb_addr, vid, pid);
 }
 
 /* -------------------------------------------------------------------------------------------------- */
@@ -345,7 +363,7 @@ uint8_t ftdi_usb_ts_read(uint8_t *buffer, uint16_t *len) {
     int res=0;
 
     /* the TS traffic is on endpoint 0x83 */
-    res=libusb_bulk_transfer(usb_device_handle, 0x83, buffer, FTDI_USB_TS_FRAME_SIZE, &rxed, USB_FAST_TIMEOUT);
+    res=libusb_bulk_transfer(usb_device_handle_ts, 0x83, buffer, FTDI_USB_TS_FRAME_SIZE, &rxed, USB_FAST_TIMEOUT);
 
     if (res<0) {
         printf("ERROR: USB TS Data Read %i (%s), received %i\n",res,libusb_error_name(res),rxed);
