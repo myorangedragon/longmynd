@@ -1,4 +1,0 @@
-# needed for old portsdown     sudo apt-get install libusb-dev
-# needed for new portsdown     sudo apt-get install libusb-1.0-0-dev
-# used to build hte status reader     gcc fake_read.c -o fake_read
-

@@ -79,6 +79,7 @@ A video player (e.g. VLC) must be running to consume the output of the TS FIFO.
                             When locked this is the symbol rate detected in the stream
     10  Viterbi Error Rate  Viterbi correction rate as a percentage * 100
     11  BER                 Bit Error Rate as a Percentage * 100
+    12  MER                 Modulation Error Ratio in dB * 10
 
 ## License
 

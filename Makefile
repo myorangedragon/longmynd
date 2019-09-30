@@ -13,7 +13,11 @@ debug: COPT = -Og
 debug: CFLAGS += -ggdb -fno-omit-frame-pointer
 debug: all
 
+werror: CFLAGS += -Werror
+werror: all
+
 fake_read:
+	@echo "  CC     "$@
 	@${CC} fake_read.c -o $@
 
 $(BIN): ${OBJ}

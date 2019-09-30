@@ -24,9 +24,13 @@
 
 #include <stdint.h>
 
-uint8_t udp_ts_write(uint8_t*, uint32_t);
-uint8_t udp_init(char*, int);
-uint8_t udp__close();
+uint8_t udp_status_init(char *udp_ip, int udp_port);
+uint8_t udp_ts_init(char *udp_ip, int udp_port);
+
+uint8_t udp_status_write(uint8_t message, uint32_t data);
+uint8_t udp_ts_write(uint8_t *buffer, uint32_t len);
+
+uint8_t udp_close(void);
 
 #endif
 
