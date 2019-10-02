@@ -43,6 +43,7 @@
 #include "fifo.h"
 #include "ftdi_usb.h"
 #include "udp.h"
+#include "beep.h"
 
 /* -------------------------------------------------------------------------------------------------- */
 /* ----------------- DEFINES ------------------------------------------------------------------------ */
@@ -85,6 +86,7 @@ typedef struct {
     uint8_t port;
     uint32_t freq_requested;
     uint32_t sr_requested;
+    bool beep_enabled;
 
     uint8_t device_usb_bus;
     uint8_t device_usb_addr;
@@ -146,6 +148,7 @@ static longmynd_status_t longmynd_status = {
 
 static pthread_t thread_ts;
 static pthread_t thread_i2c;
+static pthread_t thread_beep;
 
 /* -------------------------------------------------------------------------------------------------- */
 /* ----------------- ROUTINES ----------------------------------------------------------------------- */
@@ -184,6 +187,7 @@ uint8_t process_command_line(int argc, char *argv[], longmynd_config_t *config) 
 
     /* Defaults */
     config->port_swap = false;
+    config->beep_enabled = false;
     config->device_usb_addr = 0;
     config->device_usb_bus = 0;
     config->ts_use_ip = false;
@@ -222,6 +226,10 @@ uint8_t process_command_line(int argc, char *argv[], longmynd_config_t *config) 
                 break;
             case 'w':
                 config->port_swap=true;
+                param--; /* there is no data for this so go back */
+                break;
+            case 'b':
+                config->beep_enabled=true;
                 param--; /* there is no data for this so go back */
                 break;
           }
@@ -284,6 +292,7 @@ uint8_t process_command_line(int argc, char *argv[], longmynd_config_t *config) 
              else                     printf("              Main Status output to IP=%s:%i\n",config->status_ip_addr,config->status_ip_port);
              if (config->port_swap)   printf("              NIM inputs are swapped (Main now refers to BOTTOM F-Type\n");
              else                     printf("              Main refers to TOP F-Type\n");
+             if (config->beep_enabled) printf("              MER Beep enabled\n");
         }
     }
 
@@ -637,6 +646,20 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Error creating loop_i2c pthread\n");
     }
 
+    thread_vars_t thread_vars_beep = {
+        .main_err_ptr = &err,
+        .config = &longmynd_config,
+        .status = &longmynd_status
+    };
+
+    if(longmynd_config.beep_enabled)
+    {
+        if(0 != pthread_create(&thread_beep, NULL, loop_beep, (void *)&thread_vars_beep))
+        {
+            fprintf(stderr, "Error creating loop_beep pthread\n");
+        }
+    }
+
     longmynd_status_t longmynd_status_cpy;
 
     while (err==ERROR_NONE) {
@@ -667,6 +690,7 @@ int main(int argc, char *argv[]) {
     /* Exited, wait for child threads to exit */
     pthread_join(thread_ts, NULL);
     pthread_join(thread_i2c, NULL);
+    if(longmynd_config.beep_enabled) pthread_join(thread_beep, NULL);
 
     return err;
 }

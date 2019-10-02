@@ -1,11 +1,11 @@
 BIN = longmynd
-SRC = main.c nim.c ftdi.c stv0910.c stv0910_utils.c stvvglna.c stvvglna_utils.c stv6120.c stv6120_utils.c ftdi_usb.c fifo.c udp.c
+SRC = main.c nim.c ftdi.c stv0910.c stv0910_utils.c stvvglna.c stvvglna_utils.c stv6120.c stv6120_utils.c ftdi_usb.c fifo.c udp.c beep.c
 OBJ = ${SRC:.c=.o}
 
 CC = gcc
 COPT = -O3
 CFLAGS += -Wall -Wextra -Wpedantic -Wunused -DVERSION=\"${VER}\" -pthread
-LDFLAGS += -lusb-1.0
+LDFLAGS += -lusb-1.0 -lm -lasound
 
 all: ${BIN} fake_read
 
