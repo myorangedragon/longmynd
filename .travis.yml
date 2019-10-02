@@ -6,7 +6,7 @@ language: c
 
 # Install dependencies
 before_install:
-  - sudo apt install libusb-1.0-0-dev
+  - sudo apt install libusb-1.0-0-dev libasound2-dev
 addons:
   apt:
     update: true
