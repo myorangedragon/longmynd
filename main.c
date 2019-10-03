@@ -652,12 +652,9 @@ int main(int argc, char *argv[]) {
         .status = &longmynd_status
     };
 
-    if(longmynd_config.beep_enabled)
+    if(0 != pthread_create(&thread_beep, NULL, loop_beep, (void *)&thread_vars_beep))
     {
-        if(0 != pthread_create(&thread_beep, NULL, loop_beep, (void *)&thread_vars_beep))
-        {
-            fprintf(stderr, "Error creating loop_beep pthread\n");
-        }
+        fprintf(stderr, "Error creating loop_beep pthread\n");
     }
 
     longmynd_status_t longmynd_status_cpy;
@@ -690,7 +687,7 @@ int main(int argc, char *argv[]) {
     /* Exited, wait for child threads to exit */
     pthread_join(thread_ts, NULL);
     pthread_join(thread_i2c, NULL);
-    if(longmynd_config.beep_enabled) pthread_join(thread_beep, NULL);
+    pthread_join(thread_beep, NULL);
 
     return err;
 }

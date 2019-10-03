@@ -80,11 +80,11 @@ typedef struct {
     longmynd_status_t *status;
 } thread_vars_t;
 
-static void generate_sine(uint8_t *frames, int count, double *_phase, double _freq, unsigned int _rate, unsigned int _channels, double _amplitude) {
+static void generate_sine(uint8_t *frames, int count, double *_phase, double _freq, unsigned int _rate, unsigned int _channels, bool _enable) {
   double phase = *_phase;
   double max_phase = 1.0 / _freq;
   double step = 1.0 / (double)_rate;
-  double res;
+  double res = 0.0;
   unsigned int    chn;
   int32_t  ires;
   int16_t *samp16 = (int16_t*) frames;
@@ -92,7 +92,10 @@ static void generate_sine(uint8_t *frames, int count, double *_phase, double _fr
   while (count-- > 0) {
     for(chn = 0; chn < _channels; chn++) {
       // SND_PCM_FORMAT_S16_LE:
-      res = (sin((phase * 2 * M_PI) / max_phase - M_PI)) * _amplitude * 0x03fffffff; /* Don't use MAX volume */
+      if(_enable)
+      {
+        res = (sin((phase * 2 * M_PI) / max_phase - M_PI)) * 0x03fffffff; /* Don't use MAX volume */
+      }
       ires = res;
       *samp16++ = ires >> 16;
     }
@@ -269,97 +272,104 @@ static int set_swparams(snd_pcm_t *handle, snd_pcm_sw_params_t *swparams, snd_pc
   return 0;
 }
 
-pthread_t thread_sound;
 void *loop_beep(void *arg) {
-    thread_vars_t *thread_vars = (thread_vars_t *)arg;
-    uint8_t *err = &thread_vars->thread_err;
+  thread_vars_t *thread_vars = (thread_vars_t *)arg;
+  uint8_t *err = &thread_vars->thread_err;
 
-    snd_pcm_t            *handle;
-    int                   error;
-    snd_pcm_hw_params_t  *hwparams;
-    snd_pcm_sw_params_t  *swparams;
+  while(*err == ERROR_NONE && *thread_vars->main_err_ptr == ERROR_NONE){
 
-    snd_pcm_hw_params_alloca(&hwparams);
-    snd_pcm_sw_params_alloca(&swparams);
+    if(thread_vars->config->beep_enabled){
 
-    char              *device      = "default";       /* playback device */
-    snd_pcm_format_t   format      = SND_PCM_FORMAT_S16; /* sample format */
-    unsigned int       rate        = 48000;              /* stream rate */
-    unsigned int       channels    = 2;              /* count of channels */
-    snd_pcm_uframes_t  buffer_size;
-    snd_pcm_uframes_t  period_size;
+      snd_pcm_t            *handle;
+      int                   error;
+      snd_pcm_hw_params_t  *hwparams;
+      snd_pcm_sw_params_t  *swparams;
 
-    if ((error = snd_pcm_open(&handle, device, SND_PCM_STREAM_PLAYBACK, 0)) < 0) {
-        printf("Playback open error: %d,%s\n", error,snd_strerror(error));
-        *err = ERROR_THREAD_ERROR;
-        return NULL;
+      snd_pcm_hw_params_alloca(&hwparams);
+      snd_pcm_sw_params_alloca(&swparams);
+
+      char              *device      = "default";       /* playback device */
+      snd_pcm_format_t   format      = SND_PCM_FORMAT_S16; /* sample format */
+      unsigned int       rate        = 48000;              /* stream rate */
+      unsigned int       channels    = 2;              /* count of channels */
+      snd_pcm_uframes_t  buffer_size;
+      snd_pcm_uframes_t  period_size;
+
+      if ((error = snd_pcm_open(&handle, device, SND_PCM_STREAM_PLAYBACK, 0)) < 0) {
+          printf("Playback open error: %d,%s\n", error,snd_strerror(error));
+          *err = ERROR_THREAD_ERROR;
+          return NULL;
+      }
+
+      if ((error = set_hwparams(handle, hwparams, SND_PCM_ACCESS_RW_INTERLEAVED, format, rate, channels, &buffer_size, &period_size)) < 0) {
+          printf("Setting of hwparams failed: %s\n", snd_strerror(error));
+          snd_pcm_close(handle);
+          *err = ERROR_THREAD_ERROR;
+          return NULL;
+      }
+      if ((error = set_swparams(handle, swparams, &buffer_size, &period_size)) < 0) {
+          printf("Setting of swparams failed: %s\n", snd_strerror(error));
+          snd_pcm_close(handle);
+          *err = ERROR_THREAD_ERROR;
+          return NULL;
+      }
+
+      uint8_t              *frames;
+      frames = malloc(snd_pcm_frames_to_bytes(handle, period_size));
+
+      if (frames == NULL) {
+          fprintf(stderr, "No enough memory\n");
+          *err = ERROR_THREAD_ERROR;
+          return NULL;
+      }
+
+      snd_pcm_prepare(handle);
+
+      double freq = 400.0;
+      double phase  = 0.0;
+
+      freq = 700.0 * (exp((200+(10*thread_vars->status->modulation_error_rate))/1127.0)-1.0);
+      generate_sine(frames, period_size, &phase, freq, rate, channels, (thread_vars->status->state == STATE_DEMOD_S2));
+
+      /* Start playback */
+      snd_pcm_writei(handle, frames, period_size);
+      snd_pcm_start(handle);
+
+      snd_pcm_sframes_t avail;
+
+      while(*err == ERROR_NONE && *thread_vars->main_err_ptr == ERROR_NONE && thread_vars->config->beep_enabled){
+          /* Wait until device is ready for more data */
+          if(snd_pcm_wait(handle, 100))
+          {
+              avail = snd_pcm_avail_update(handle);
+              while (avail >= (snd_pcm_sframes_t)period_size)
+              {
+                  freq = 700.0 * (exp((200+(10*thread_vars->status->modulation_error_rate))/1127.0)-1.0);
+
+                  generate_sine(frames, period_size, &phase, freq, rate, channels, (thread_vars->status->state == STATE_DEMOD_S2));
+                  while (snd_pcm_writei(handle, frames, period_size) < 0)
+                  {
+                      /* Handle underrun */
+                      snd_pcm_prepare(handle);
+                  }
+                  avail = snd_pcm_avail_update(handle);
+              }
+          }
+      }
+
+      /* Stop Playback */
+      snd_pcm_drop(handle);
+
+      /* Empty buffer */
+      snd_pcm_drain(handle);
+
+      free(frames);
+      snd_pcm_close(handle);
     }
 
-    if ((error = set_hwparams(handle, hwparams, SND_PCM_ACCESS_RW_INTERLEAVED, format, rate, channels, &buffer_size, &period_size)) < 0) {
-        printf("Setting of hwparams failed: %s\n", snd_strerror(error));
-        snd_pcm_close(handle);
-        *err = ERROR_THREAD_ERROR;
-        return NULL;
-    }
-    if ((error = set_swparams(handle, swparams, &buffer_size, &period_size)) < 0) {
-        printf("Setting of swparams failed: %s\n", snd_strerror(error));
-        snd_pcm_close(handle);
-        *err = ERROR_THREAD_ERROR;
-        return NULL;
-    }
+    usleep(10*1000); // 10ms
 
-    uint8_t              *frames;
-    frames = malloc(snd_pcm_frames_to_bytes(handle, period_size));
+  }
 
-    if (frames == NULL) {
-        fprintf(stderr, "No enough memory\n");
-        *err = ERROR_THREAD_ERROR;
-        return NULL;
-    }
-
-    snd_pcm_prepare(handle);
-
-    double freq = 400.0;
-    double phase  = 0.0;
-    double amplitude = 0.0;
-
-    generate_sine(frames, period_size, &phase, freq, rate, channels, amplitude);
-
-    /* Start playback */
-    snd_pcm_writei(handle, frames, period_size);
-    snd_pcm_start(handle);
-
-    snd_pcm_sframes_t avail;
-
-    while(*err == ERROR_NONE && *thread_vars->main_err_ptr == ERROR_NONE){
-        /* Wait until device is ready for more data */
-        if(snd_pcm_wait(handle, 100))
-        {
-            avail = snd_pcm_avail_update(handle);
-            while (avail >= (snd_pcm_sframes_t)period_size)
-            {
-                amplitude = (thread_vars->status->state == STATE_DEMOD_S2) ? 1.0 : 0.0;
-                freq = 700.0 * (exp((200+(10*thread_vars->status->modulation_error_rate))/1127.0)-1.0);
-
-                generate_sine(frames, period_size, &phase, freq, rate, channels, amplitude);
-                while (snd_pcm_writei(handle, frames, period_size) < 0)
-                {
-                    /* Handle underrun */
-                    snd_pcm_prepare(handle);
-                }
-                avail = snd_pcm_avail_update(handle);
-            }
-        }
-    }
-
-    /* Stop Playback */
-    snd_pcm_drop(handle);
-
-    /* Empty buffer */
-    snd_pcm_drain(handle);
-
-    free(frames);
-    snd_pcm_close(handle);
-
-    return NULL;
+  return NULL;
 }
