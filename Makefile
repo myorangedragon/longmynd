@@ -4,7 +4,7 @@ OBJ = ${SRC:.c=.o}
 
 CC = gcc
 COPT = -O3 -march=native -mtune=native
-CFLAGS += -Wall -Wextra -Wpedantic -Wunused -DVERSION=\"${VER}\" -pthread
+CFLAGS += -Wall -Wextra -Wpedantic -Wunused -DVERSION=\"${VER}\" -pthread -D_GNU_SOURCE
 LDFLAGS += -lusb-1.0 -lm -lasound
 
 all: ${BIN} fake_read

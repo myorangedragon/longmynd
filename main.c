@@ -544,6 +544,10 @@ int main(int argc, char *argv[]) {
     {
         fprintf(stderr, "Error creating loop_ts pthread\n");
     }
+    else
+    {
+        pthread_setname_np(thread_ts, "TS Transport");
+    }
 
     thread_vars_t thread_vars_ts_parse = {
         .main_err_ptr = &err,
@@ -554,6 +558,10 @@ int main(int argc, char *argv[]) {
     if(0 != pthread_create(&thread_ts_parse, NULL, loop_ts_parse, (void *)&thread_vars_ts_parse))
     {
         fprintf(stderr, "Error creating loop_ts_parse pthread\n");
+    }
+    else
+    {
+        pthread_setname_np(thread_ts_parse, "TS Parse");
     }
 
     thread_vars_t thread_vars_i2c = {
@@ -566,6 +574,10 @@ int main(int argc, char *argv[]) {
     {
         fprintf(stderr, "Error creating loop_i2c pthread\n");
     }
+    else
+    {
+        pthread_setname_np(thread_i2c, "Receiver");
+    }
 
     thread_vars_t thread_vars_beep = {
         .main_err_ptr = &err,
@@ -576,6 +588,10 @@ int main(int argc, char *argv[]) {
     if(0 != pthread_create(&thread_beep, NULL, loop_beep, (void *)&thread_vars_beep))
     {
         fprintf(stderr, "Error creating loop_beep pthread\n");
+    }
+    else
+    {
+        pthread_setname_np(thread_beep, "Beep Audio");
     }
 
     longmynd_status_t longmynd_status_cpy;
