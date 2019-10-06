@@ -239,13 +239,20 @@ void *loop_ts_parse(void *arg) {
             if(ts_packet_ptr[0] != TS_HEADER_SYNC)
             {
                 /* Align input to the TS sync byte */
+                ts_buffer_length_remaining = ts_buffer_length - (&ts_packet_ptr[0] - &ts_buffer[0]);
+
+                if(ts_buffer_length_remaining <= TS_PACKET_SIZE)
+                {
+                    /* Nothing more in buffer, force exit */
+                    ts_packet_ptr = NULL;
+                    continue;
+                }
+
                 ts_packet_ptr = memchr(ts_packet_ptr, TS_HEADER_SYNC, ts_buffer_length_remaining - TS_PACKET_SIZE);
                 if(ts_packet_ptr == NULL)
                 {
                     continue;
                 }
-
-                ts_buffer_length_remaining = ts_buffer_length - (ts_packet_ptr - ts_buffer);
             }
 
             ts_pid = (uint32_t)((ts_packet_ptr[1] & 0x1F) << 8) | (uint32_t)ts_packet_ptr[2];
