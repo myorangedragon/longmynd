@@ -32,6 +32,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <pthread.h>
+#include "main.h"
 #include "ftdi.h"
 #include "stv0910.h"
 #include "stv0910_regs.h"
@@ -44,35 +45,11 @@
 #include "ftdi_usb.h"
 #include "udp.h"
 #include "beep.h"
+#include "ts.h"
 
 /* -------------------------------------------------------------------------------------------------- */
 /* ----------------- DEFINES ------------------------------------------------------------------------ */
 /* -------------------------------------------------------------------------------------------------- */
-
-/* states of the main loop state machine */
-#define STATE_INIT               0
-#define STATE_DEMOD_HUNTING      1
-#define STATE_DEMOD_FOUND_HEADER 2
-#define STATE_DEMOD_S            3
-#define STATE_DEMOD_S2           4
-
-/* define the various status reports */
-#define STATUS_STATE               1
-#define STATUS_LNA_GAIN            2
-#define STATUS_PUNCTURE_RATE       3
-#define STATUS_POWER_I             4 
-#define STATUS_POWER_Q             5
-#define STATUS_CARRIER_FREQUENCY   6
-#define STATUS_CONSTELLATION_I     7
-#define STATUS_CONSTELLATION_Q     8
-#define STATUS_SYMBOL_RATE         9
-#define STATUS_VITERBI_ERROR_RATE 10
-#define STATUS_BER                11
-#define STATUS_MER                12
-
-
-/* The number of constellation peeks we do for each background loop */
-#define NUM_CONSTELLATIONS 16
 
 /* Milliseconds between each i2c control loop */
 #define I2C_LOOP_MS  100
@@ -81,71 +58,20 @@
 /* ----------------- GLOBALS ------------------------------------------------------------------------ */
 /* -------------------------------------------------------------------------------------------------- */
 
-typedef struct {
-    bool port_swap;
-    uint8_t port;
-    uint32_t freq_requested;
-    uint32_t sr_requested;
-    bool beep_enabled;
-
-    uint8_t device_usb_bus;
-    uint8_t device_usb_addr;
-
-    bool ts_use_ip;
-    bool ts_reset;
-    char ts_fifo_path[128];
-    char ts_ip_addr[16];
-    int ts_ip_port;
-
-    bool status_use_ip;
-    char status_fifo_path[128];
-    char status_ip_addr[16];
-    int status_ip_port;
-
-    bool new;
-    pthread_mutex_t mutex;
-} longmynd_config_t;
-
-typedef struct {
-    uint8_t state;
-    uint8_t demod_state;
-    bool lna_ok;
-    uint16_t lna_gain;
-    uint8_t power_i;
-    uint8_t power_q;
-    uint32_t frequency_requested;
-    int32_t frequency_offset;
-    uint32_t symbolrate;
-    uint32_t viterbi_error_rate; // DVB-S1
-    uint32_t bit_error_rate; // DVB-S2
-    uint32_t modulation_error_rate; // DVB-S2
-    uint8_t constellation[NUM_CONSTELLATIONS][2]; // { i, q }
-    uint8_t puncture_rate;
-
-    bool new;
-    pthread_mutex_t mutex;
-    pthread_cond_t signal;
-} longmynd_status_t;
-
-typedef struct {
-    uint8_t *main_state_ptr;
-    uint8_t *main_err_ptr;
-    uint8_t thread_err;
-    longmynd_config_t *config;
-    longmynd_status_t *status;
-} thread_vars_t;
-
 static longmynd_config_t longmynd_config = {
     .new = false,
     .mutex = PTHREAD_MUTEX_INITIALIZER
 };
 
 static longmynd_status_t longmynd_status = {
+    .service_name = "\0",
+    .service_provider_name = "\0",
     .new = false,
     .mutex = PTHREAD_MUTEX_INITIALIZER,
     .signal = PTHREAD_COND_INITIALIZER
 };
 
+static pthread_t thread_ts_parse;
 static pthread_t thread_ts;
 static pthread_t thread_i2c;
 static pthread_t thread_beep;
@@ -358,56 +284,6 @@ uint8_t do_report(longmynd_status_t *status) {
 }
 
 /* -------------------------------------------------------------------------------------------------- */
-void *loop_ts(void *arg) {
-/* -------------------------------------------------------------------------------------------------- */
-/* Runs a loop to query the Minitiouner TS endpoint, and output it to the requested interface         */
-/* -------------------------------------------------------------------------------------------------- */
-    thread_vars_t *thread_vars=(thread_vars_t *)arg;
-    uint8_t *err = &thread_vars->thread_err;
-    longmynd_config_t *config = thread_vars->config;
-
-    uint8_t *buffer;
-    uint16_t len=0;
-    uint8_t (*ts_write)(uint8_t*,uint32_t);
-
-    *err=ERROR_NONE;
-
-    buffer = malloc(FTDI_USB_TS_FRAME_SIZE);
-    if(buffer == NULL)
-    {
-        *err=ERROR_TS_BUFFER_MALLOC;
-    }
-
-    if(thread_vars->config->ts_use_ip) {
-        *err=udp_ts_init(thread_vars->config->ts_ip_addr, thread_vars->config->ts_ip_port);
-        ts_write = udp_ts_write;
-    } else {
-        *err=fifo_ts_init(thread_vars->config->ts_fifo_path);
-        ts_write = fifo_ts_write;
-    }
-
-    while(*err == ERROR_NONE && *thread_vars->main_err_ptr == ERROR_NONE){
-        /* If reset flag is active (eg. just started or changed station), then clear out the ts buffer */
-        if(config->ts_reset) {
-            do {
-                if (*err==ERROR_NONE) *err=ftdi_usb_ts_read(buffer, &len);
-            } while (*err==ERROR_NONE && len>2);
-           config->ts_reset = false; 
-        }
-
-        *err=ftdi_usb_ts_read(buffer, &len);
-
-        /* if there is ts data then we send it out to the required output. But, we have to lose the first 2 bytes */
-        /* that are the usual FTDI 2 byte response and not part of the TS */
-        if ((*err==ERROR_NONE) && (len>2)) {
-            ts_write(&buffer[2],len-2);
-        }
-    }
-
-    return NULL;
-}
-
-/* -------------------------------------------------------------------------------------------------- */
 void *loop_i2c(void *arg) {
 /* -------------------------------------------------------------------------------------------------- */
 /* Runs a loop to configure and monitor the Minitiouner Receiver                                      */
@@ -415,6 +291,7 @@ void *loop_i2c(void *arg) {
 /*  Status is written to the status struct                                                            */
 /* -------------------------------------------------------------------------------------------------- */
     thread_vars_t *thread_vars=(thread_vars_t *)arg;
+    longmynd_status_t *status=(longmynd_status_t *)thread_vars->status;
     uint8_t *err = &thread_vars->thread_err;
 
     *err=ERROR_NONE;
@@ -547,13 +424,29 @@ void *loop_i2c(void *arg) {
         }
 
         /* Copy local status data over global object */
-        pthread_mutex_lock(&thread_vars->status->mutex);
-        memcpy(thread_vars->status, &status_cpy, sizeof(longmynd_status_t));
+        pthread_mutex_lock(&status->mutex);
+
+        /* Copy out other vars */
+        status->state = status_cpy.state;
+        status->demod_state = status_cpy.demod_state;
+        status->lna_ok = status_cpy.lna_ok;
+        status->lna_gain = status_cpy.lna_gain;
+        status->power_i = status_cpy.power_i;
+        status->power_q = status_cpy.power_q;
+        status->frequency_requested = status_cpy.frequency_requested;
+        status->frequency_offset = status_cpy.frequency_offset;
+        status->symbolrate = status_cpy.symbolrate;
+        status->viterbi_error_rate = status_cpy.viterbi_error_rate;
+        status->bit_error_rate = status_cpy.bit_error_rate;
+        status->modulation_error_rate = status_cpy.modulation_error_rate;
+        memcpy(status->constellation, status_cpy.constellation, (sizeof(uint8_t) * NUM_CONSTELLATIONS * 2));
+        status->puncture_rate = status_cpy.puncture_rate;
+
         /* Set new data flag */
-        thread_vars->status->new = true;
+        status->new = true;
         /* Trigger pthread signal */
-        pthread_cond_signal(&thread_vars->status->signal);
-        pthread_mutex_unlock(&thread_vars->status->mutex);
+        pthread_cond_signal(&status->signal);
+        pthread_mutex_unlock(&status->mutex);
 
         last_i2c_loop = timestamp_ms();
     }
@@ -561,7 +454,7 @@ void *loop_i2c(void *arg) {
 }
 
 /* -------------------------------------------------------------------------------------------------- */
-uint8_t status_all_write(longmynd_status_t *status, uint8_t (*status_write)(uint8_t, uint32_t)) {
+uint8_t status_all_write(longmynd_status_t *status, uint8_t (*status_write)(uint8_t, uint32_t), uint8_t (*status_string_write)(uint8_t, char*)) {
 /* -------------------------------------------------------------------------------------------------- */
 /* Reads the past status struct out to the passed write function                                      */
 /*  Returns: error code                                                                               */
@@ -595,6 +488,20 @@ uint8_t status_all_write(longmynd_status_t *status, uint8_t (*status_write)(uint
     if (err==ERROR_NONE) err=status_write(STATUS_BER, status->bit_error_rate);
     /* MER */
     if (err==ERROR_NONE) err=status_write(STATUS_MER, status->modulation_error_rate);
+    /* Service Name */
+    if (err==ERROR_NONE) err=status_string_write(STATUS_SERVICE_NAME, status->service_name);
+    /* Service Provider Name */
+    if (err==ERROR_NONE) err=status_string_write(STATUS_SERVICE_PROVIDER_NAME, status->service_provider_name);
+    /* TS Null Percentage */
+    if (err==ERROR_NONE) err=status_write(STATUS_TS_NULL_PERCENTAGE, status->ts_null_percentage);
+    /* TS Elementary Stream PIDs */
+    for (uint8_t count=0; count<NUM_ELEMENT_STREAMS; count++) {
+        if(status->ts_elementary_streams[count][0] > 0)
+        {
+            if (err==ERROR_NONE) err=status_write(STATUS_ES_PID, status->ts_elementary_streams[count][0]);
+            if (err==ERROR_NONE) err=status_write(STATUS_ES_TYPE, status->ts_elementary_streams[count][1]);
+        }
+    }
 
     return err;
 }
@@ -608,6 +515,7 @@ int main(int argc, char *argv[]) {
 /* -------------------------------------------------------------------------------------------------- */
     uint8_t err;
     uint8_t (*status_write)(uint8_t,uint32_t);
+    uint8_t (*status_string_write)(uint8_t,char*);
 
     printf("Flow: main\n");
 
@@ -617,9 +525,11 @@ int main(int argc, char *argv[]) {
     if(longmynd_config.status_use_ip) {
         if (err==ERROR_NONE) err=udp_status_init(longmynd_config.status_ip_addr, longmynd_config.status_ip_port);
         status_write = udp_status_write;
+        status_string_write = udp_status_string_write;
     } else {
         if (err==ERROR_NONE) err=fifo_status_init(longmynd_config.status_fifo_path);
         status_write = fifo_status_write;
+        status_string_write = fifo_status_string_write;
     }
 
     if (err==ERROR_NONE) err=ftdi_init(longmynd_config.device_usb_bus, longmynd_config.device_usb_addr);
@@ -633,6 +543,17 @@ int main(int argc, char *argv[]) {
     if(0 != pthread_create(&thread_ts, NULL, loop_ts, (void *)&thread_vars_ts))
     {
         fprintf(stderr, "Error creating loop_ts pthread\n");
+    }
+
+    thread_vars_t thread_vars_ts_parse = {
+        .main_err_ptr = &err,
+        .config = &longmynd_config,
+        .status = &longmynd_status
+    };
+
+    if(0 != pthread_create(&thread_ts_parse, NULL, loop_ts_parse, (void *)&thread_vars_ts_parse))
+    {
+        fprintf(stderr, "Error creating loop_ts_parse pthread\n");
     }
 
     thread_vars_t thread_vars_i2c = {
@@ -671,7 +592,7 @@ int main(int argc, char *argv[]) {
             pthread_mutex_unlock(&longmynd_status.mutex);
 
             /* Send all status via configured output interface from local copy */
-            err=status_all_write(&longmynd_status_cpy, status_write);
+            err=status_all_write(&longmynd_status_cpy, status_write, status_string_write);
         } else {
             /* Sleep 10ms */
             usleep(10*1000);
@@ -679,12 +600,15 @@ int main(int argc, char *argv[]) {
         /* Check for errors on threads */
         if(err==ERROR_NONE &&
             (thread_vars_ts.thread_err!=ERROR_NONE
+            || thread_vars_ts_parse.thread_err!=ERROR_NONE
+            || thread_vars_beep.thread_err!=ERROR_NONE
             || thread_vars_i2c.thread_err!=ERROR_NONE)) {
             err=ERROR_THREAD_ERROR;
         }
     }
 
     /* Exited, wait for child threads to exit */
+    pthread_join(thread_ts_parse, NULL);
     pthread_join(thread_ts, NULL);
     pthread_join(thread_i2c, NULL);
     pthread_join(thread_beep, NULL);

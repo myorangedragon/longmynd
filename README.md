@@ -80,6 +80,11 @@ A video player (e.g. VLC) must be running to consume the output of the TS FIFO.
     10  Viterbi Error Rate  Viterbi correction rate as a percentage * 100
     11  BER                 Bit Error Rate as a Percentage * 100
     12  MER                 Modulation Error Ratio in dB * 10
+    13  Service Provider    TS Service Provider Name
+    14  Service             TS Service Name
+    15  Null Ratio          Ratio of Nulls in TS as percentage
+    16  ES PID              Elementary Stream PID (repeated as pair with 17 for each ES)
+    17  ES Type             Elementary Stream Type (repeated as pair with 16 for each ES)
 
 ## License
 

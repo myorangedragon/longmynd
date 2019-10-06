@@ -26,6 +26,7 @@
 
 uint8_t fifo_ts_write(uint8_t*, uint32_t);
 uint8_t fifo_status_write(uint8_t, uint32_t);
+uint8_t fifo_status_string_write(uint8_t, char*);
 uint8_t fifo_ts_init(char *fifo_path);
 uint8_t fifo_status_init(char *fifo_path);
 uint8_t fifo_close(bool);

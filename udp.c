@@ -117,6 +117,25 @@ uint8_t udp_status_write(uint8_t message, uint32_t data) {
 }
 
 /* -------------------------------------------------------------------------------------------------- */
+uint8_t udp_status_string_write(uint8_t message, char *data) {
+/* -------------------------------------------------------------------------------------------------- */
+/* takes a buffer and writes out the contents to udp socket                                           */
+/* *buffer: the buffer that contains the data to be sent                                              */
+/*     len: the length (number of bytes) of data to be sent                                           */
+/*  return: error code                                                                                */
+/* -------------------------------------------------------------------------------------------------- */
+    uint8_t err=ERROR_NONE;
+    char status_message[5+128];
+
+    sprintf(status_message, "$%i,%s\n", message, data);
+
+    sendto(sockfd_status, status_message, strlen(status_message), 0, (const struct sockaddr *)&servaddr_status,  sizeof(struct sockaddr)); 
+
+    return err;
+}
+
+
+/* -------------------------------------------------------------------------------------------------- */
 static uint8_t udp_init(struct sockaddr_in *servaddr_ptr, int *sockfd_ptr, char *udp_ip, int udp_port) {
 /* -------------------------------------------------------------------------------------------------- */
 /* initialises the udp socket                                                                         */

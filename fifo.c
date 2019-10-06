@@ -117,6 +117,29 @@ uint8_t fifo_status_write(uint8_t message, uint32_t data) {
 }
 
 /* -------------------------------------------------------------------------------------------------- */
+uint8_t fifo_status_string_write(uint8_t message, char *data) {
+/* -------------------------------------------------------------------------------------------------- */
+/* *message: the string to write out that identifies the status message                               */
+/*     data: an integer to be sent out (as a decimal number string)                                   */
+/*   return: error code                                                                               */
+/* -------------------------------------------------------------------------------------------------- */
+    uint8_t err=ERROR_NONE;
+    int ret;
+    char status_message[5+128];
+
+    sprintf(status_message, "$%i,%s\n", message, data);
+    ret=write(fd_status_fifo, status_message, strlen(status_message));
+    if (ret!=(int)strlen(status_message)) {
+        printf("ERROR: status fifo write\n");
+        err=ERROR_TS_FIFO_WRITE;
+    }
+
+    if (err!=ERROR_NONE) printf("ERROR: fifo status write\n");
+
+    return err;
+}
+
+/* -------------------------------------------------------------------------------------------------- */
 static uint8_t fifo_init(int *fd_ptr, char *fifo_path) {
 /* -------------------------------------------------------------------------------------------------- */
 /* initialises the ts and status fifos                                                                */

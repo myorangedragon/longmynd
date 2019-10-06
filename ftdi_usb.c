@@ -351,7 +351,7 @@ uint8_t ftdi_usb_init_ts(uint8_t usb_bus, uint8_t usb_addr, uint16_t vid, uint16
 }
 
 /* -------------------------------------------------------------------------------------------------- */
-uint8_t ftdi_usb_ts_read(uint8_t *buffer, uint16_t *len) {
+uint8_t ftdi_usb_ts_read(uint8_t *buffer, uint16_t *len, uint32_t frame_size) {
 /* -------------------------------------------------------------------------------------------------- */
 /* every now and again we check to see if there is any transport stream available                     */
 /* *buffer: the buffer to collect the ts data into                                                    */
@@ -363,7 +363,7 @@ uint8_t ftdi_usb_ts_read(uint8_t *buffer, uint16_t *len) {
     int res=0;
 
     /* the TS traffic is on endpoint 0x83 */
-    res=libusb_bulk_transfer(usb_device_handle_ts, 0x83, buffer, FTDI_USB_TS_FRAME_SIZE, &rxed, USB_FAST_TIMEOUT);
+    res=libusb_bulk_transfer(usb_device_handle_ts, 0x83, buffer, frame_size, &rxed, USB_FAST_TIMEOUT);
 
     if (res<0) {
         printf("ERROR: USB TS Data Read %i (%s), received %i\n",res,libusb_error_name(res),rxed);
