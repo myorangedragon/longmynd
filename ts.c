@@ -481,10 +481,12 @@ void *loop_ts_parse(void *arg) {
 
             ts_packet_ptr++;
         }
-
         pthread_mutex_lock(&status->mutex);
-        
-        status->ts_null_percentage = (100 * ts_packet_null_count) / ts_packet_total_count;
+
+        if(ts_packet_total_count > 0)
+        {
+            status->ts_null_percentage = (100 * ts_packet_null_count) / ts_packet_total_count;
+        }
 
         /* Trigger pthread signal */
         pthread_cond_signal(&status->signal);
