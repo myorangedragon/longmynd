@@ -170,6 +170,9 @@ void *loop_ts_parse(void *arg) {
 
     /* Generic TS */
     uint32_t ts_pid;
+    uint32_t ts_adaption_field_flag;
+    uint32_t ts_adaption_field_length;
+    uint32_t ts_payload_content_offset;
     uint32_t ts_payload_content_length;
     uint8_t *ts_payload_ptr;
     uint32_t ts_payload_section_length;
@@ -189,6 +192,8 @@ void *loop_ts_parse(void *arg) {
     uint32_t ts_pmt_es_type;
     uint32_t ts_pmt_es_pid;
     uint32_t ts_pmt_es_info_length;
+    uint32_t ts_pmt_offset;
+    uint32_t ts_pmt_index;
 
     /* SDT */
     uint8_t *ts_packet_sdt_table_ptr;
@@ -233,7 +238,7 @@ void *loop_ts_parse(void *arg) {
         {
             if(ts_packet_ptr[0] != TS_HEADER_SYNC)
             {
-                /* Re-align input to the TS sync byte */
+                /* Align input to the TS sync byte */
                 ts_packet_ptr = memchr(ts_packet_ptr, TS_HEADER_SYNC, ts_buffer_length_remaining - TS_PACKET_SIZE);
                 if(ts_packet_ptr == NULL)
                 {
@@ -242,15 +247,34 @@ void *loop_ts_parse(void *arg) {
 
                 ts_buffer_length_remaining = ts_buffer_length - (ts_packet_ptr - ts_buffer);
             }
-        
-            ts_packet_total_count++;
 
             ts_pid = (uint32_t)((ts_packet_ptr[1] & 0x1F) << 8) | (uint32_t)ts_packet_ptr[2];
+        
+            ts_packet_total_count++;
+            
+            ts_payload_content_offset = 4;
+
+            ts_adaption_field_flag = (uint32_t)(ts_packet_ptr[3] & 0x20) >> 5;
+            if(ts_adaption_field_flag > 0)
+            {
+                ts_adaption_field_length = ts_packet_ptr[4];
+
+                if(ts_adaption_field_length == 0
+                    || ts_adaption_field_length > 183)
+                {
+                    /* Length invalid, packet is likely invalid */
+                    ts_packet_ptr++;
+                    continue;
+                }
+
+                ts_payload_content_offset += ts_adaption_field_length;
+            }
             
             /* NULL/padding packets */
             if(ts_pid == TS_PID_NULL)
             {
                 ts_packet_null_count++;
+
                 ts_packet_ptr++;
                 continue;
             }
@@ -258,7 +282,7 @@ void *loop_ts_parse(void *arg) {
 #if 0
             if(ts_pid == TS_PID_PAT)
             {
-                ts_payload_ptr = (uint8_t *)&ts_packet_ptr[4 + 1 + ts_packet_ptr[4]];
+                ts_payload_ptr = (uint8_t *)&ts_packet_ptr[ts_payload_content_offset + 1 + ts_packet_ptr[ts_payload_content_offset]];
 
                 if(ts_payload_ptr[0] != TS_TABLE_PAT)
                 {
@@ -281,7 +305,7 @@ void *loop_ts_parse(void *arg) {
 
                 if(ts_payload_crc != ts_payload_crc_c)
                 {
-                    //printf(" - CRC FAIL (%"PRIx32"/%"PRIx32")\n", ts_payload_crc_c, ts_payload_crc);
+                    /* CRC Fail */
                     ts_packet_ptr++;
                     continue;
                 }
@@ -289,6 +313,7 @@ void *loop_ts_parse(void *arg) {
                 ts_pat_programs_count = (ts_payload_section_length - 9) / 4;
 
                 /* For now, only read the first programme */
+                /* TODO: Read all programs here to enable PID parsing of PMT */
                 if(ts_pat_programs_count > 0)
                 {
                     //ts_pat_program_id = ((uint32_t)ts_payload_ptr[8] << 8) | (uint32_t)ts_payload_ptr[9];
@@ -303,7 +328,7 @@ void *loop_ts_parse(void *arg) {
             if(ts_pid == TS_PID_SDT)
             {
                 ts_payload_content_length = 0;
-                ts_payload_ptr = (uint8_t *)&ts_packet_ptr[4 + 1 + ts_packet_ptr[4]];
+                ts_payload_ptr = (uint8_t *)&ts_packet_ptr[ts_payload_content_offset + 1 + ts_packet_ptr[ts_payload_content_offset]];
 
                 if(ts_payload_ptr[0] != TS_TABLE_SDT)
                 {
@@ -327,7 +352,7 @@ void *loop_ts_parse(void *arg) {
 
                 if(ts_payload_crc != ts_payload_crc_c)
                 {
-                    //printf(" - CRC FAIL (%"PRIx32"/%"PRIx32")\n", ts_payload_crc_c, ts_payload_crc);
+                    /* CRC Fail */
                     ts_packet_ptr++;
                     continue;
                 }
@@ -370,8 +395,6 @@ void *loop_ts_parse(void *arg) {
                 memcpy(status->service_provider_name, &ts_packet_sdt_descriptor_ptr[4], service_provider_name_length);
                 status->service_provider_name[service_provider_name_length] = '\0';
 
-                /* Trigger pthread signal */
-                pthread_cond_signal(&status->signal);
                 pthread_mutex_unlock(&status->mutex);
 
                 ts_payload_content_length += 1;
@@ -384,8 +407,9 @@ void *loop_ts_parse(void *arg) {
             }
             else // if(ts_pat_program_pid !=0x00 && ts_pid == ts_pat_program_pid) /* PMT, once found in PAT */
             {
-                ts_payload_ptr = (uint8_t *)&ts_packet_ptr[4 + 1 + ts_packet_ptr[4]];
+                ts_payload_ptr = (uint8_t *)&ts_packet_ptr[ts_payload_content_offset + 1 + ts_packet_ptr[ts_payload_content_offset]];
 
+                /* We're not filtering by PID here yet, so we rely on filtering by table ID */
                 if(ts_payload_ptr[0] != TS_TABLE_PMT)
                 {
                     ts_packet_ptr++;
@@ -407,7 +431,7 @@ void *loop_ts_parse(void *arg) {
 
                 if(ts_payload_crc != ts_payload_crc_c)
                 {
-                    //printf(" - CRC FAIL (%"PRIx32"/%"PRIx32")\n", ts_payload_crc_c, ts_payload_crc);
+                    /* CRC Fail */
                     ts_packet_ptr++;
                     continue;
                 }
@@ -421,10 +445,11 @@ void *loop_ts_parse(void *arg) {
                 //    printf(" - PMT Program Info: %.*s\n", ts_pmt_program_info_length, &ts_payload_ptr[12]);
                 //}
 
-                uint32_t offset = 0, index = 0;
-                while((12+1+ts_pmt_program_info_length+offset) < ts_payload_section_length)
+                ts_pmt_offset = 0;
+                ts_pmt_index = 0;
+                while((12+1+ts_pmt_program_info_length+ts_pmt_offset) < ts_payload_section_length)
                 {
-                    ts_pmt_es_ptr = &ts_payload_ptr[12 + ts_pmt_program_info_length + offset];
+                    ts_pmt_es_ptr = &ts_payload_ptr[12 + ts_pmt_program_info_length + ts_pmt_offset];
 
                     /* For each elementary PID */
                     ts_pmt_es_type = (uint32_t)ts_pmt_es_ptr[0];
@@ -432,33 +457,21 @@ void *loop_ts_parse(void *arg) {
                     ts_pmt_es_pid = ((uint32_t)(ts_pmt_es_ptr[1] & 0x1F) << 8) | (uint32_t)ts_pmt_es_ptr[2];
 
                     ts_pmt_es_info_length = ((uint32_t)(ts_pmt_es_ptr[3] & 0x0F) << 8) | (uint32_t)ts_pmt_es_ptr[4];
-                    if(ts_pmt_es_info_length > 0)
-                    {
+                    //if(ts_pmt_es_info_length > 0)
+                    //{
                         //printf(" - - PMT ES Info: %.*s\n", ts_pmt_es_info_length, &ts_pmt_es_ptr[5]);
-                    }
+                    //}
 
                     pthread_mutex_lock(&status->mutex);
 
-                    status->ts_elementary_streams[index][0] = ts_pmt_es_pid;
-                    status->ts_elementary_streams[index][1] = ts_pmt_es_type;
+                    status->ts_elementary_streams[ts_pmt_index][0] = ts_pmt_es_pid;
+                    status->ts_elementary_streams[ts_pmt_index][1] = ts_pmt_es_type;
 
                     pthread_mutex_unlock(&status->mutex);
 
-                    offset += (5 + ts_pmt_es_info_length);
-                    index++;
+                    ts_pmt_offset += (5 + ts_pmt_es_info_length);
+                    ts_pmt_index++;
                 }
-
-                pthread_mutex_lock(&status->mutex);
-
-                for(; index < NUM_ELEMENT_STREAMS; index++)
-                {
-                    status->ts_elementary_streams[index][0] = 0x00;
-                    status->ts_elementary_streams[index][1] = 0x00;
-                }
-
-                /* Trigger pthread signal */
-                pthread_cond_signal(&status->signal);
-                pthread_mutex_unlock(&status->mutex);
 
                 ts_packet_ptr++;
                 continue;
@@ -473,6 +486,7 @@ void *loop_ts_parse(void *arg) {
 
         /* Trigger pthread signal */
         pthread_cond_signal(&status->signal);
+
         pthread_mutex_unlock(&status->mutex);
     }
 
