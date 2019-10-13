@@ -1,19 +1,31 @@
 ## Travis CI Configuration file
 
-os: linux
-dist: bionic
+matrix:
+  include:
+     # Ubuntu 16.04
+    - os: linux
+      dist: xenial
+     # Ubuntu 18.04
+    - os: linux
+      dist: bionic
 language: c
 
 # Install dependencies
 before_install:
-  - sudo apt install libusb-1.0-0-dev libasound2-dev
-addons:
-  apt:
-    update: true
+  - sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y
+  - sudo apt-get update -q
+  # Build dependencies
+  - sudo apt-get install libusb-1.0-0-dev libasound2-dev -y
+  # Test Matrix dependencies
+  - sudo apt-get install gcc-5 gcc-6 gcc-7 gcc-8 gcc-9 -y
 
 # Only grab latest git commit (no need for history)
 git:
   depth: 1
 
 script:
-  - make werror
+  - make clean && make werror GCC=gcc-5
+  - make clean && make werror GCC=gcc-6
+  - make clean && make werror GCC=gcc-7
+  - make clean && make werror GCC=gcc-8
+  - make clean && make werror GCC=gcc-9
