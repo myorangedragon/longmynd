@@ -280,6 +280,14 @@ uint8_t do_report(longmynd_status_t *status) {
         status->modulation_error_rate = 0;
     }
 
+    /* MODCOD, Short Frames, Pilots */
+    if (err==ERROR_NONE) err=stv0910_read_modcod_and_type(STV0910_DEMOD_TOP, &status->modcod, &status->short_frame, &status->pilots);
+    if(status->state!=STATE_DEMOD_S2) {
+        /* short frames & pilots only valid for S2 DEMOD state */
+        status->short_frame = 0;
+        status->pilots = 0;
+    }
+
     return err;
 }
 
@@ -502,6 +510,12 @@ uint8_t status_all_write(longmynd_status_t *status, uint8_t (*status_write)(uint
             if (err==ERROR_NONE) err=status_write(STATUS_ES_TYPE, status->ts_elementary_streams[count][1]);
         }
     }
+    /* MODCOD */
+    if (err==ERROR_NONE) err=status_write(STATUS_MODCOD, status->modcod);
+    /* Short Frames */
+    if (err==ERROR_NONE) err=status_write(STATUS_SHORT_FRAME, status->short_frame);
+    /* Pilots */
+    if (err==ERROR_NONE) err=status_write(STATUS_PILOTS, status->pilots);
 
     return err;
 }

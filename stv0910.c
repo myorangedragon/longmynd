@@ -246,6 +246,30 @@ uint8_t stv0910_read_dvbs2_mer(uint8_t demod, uint32_t *mer) {
 }
 
 /* -------------------------------------------------------------------------------------------------- */
+uint8_t stv0910_read_modcod_and_type(uint8_t demod, uint32_t *modcod, bool *short_frame, bool *pilots) {
+/* -------------------------------------------------------------------------------------------------- */
+/*   Note that MODCODs are different in DVBS and DVBS2. Also short_frame and pilots only valid for S2 */
+/*    demod: STV0910_DEMOD_TOP | STV0910_DEMOD_BOTTOM: which demodulator is being read                */
+/*   modcod: place to store the result                                                                */
+/*   return: error state                                                                              */
+/* -------------------------------------------------------------------------------------------------- */
+    uint8_t err;
+    uint8_t regval;
+
+    /* first we trigger a buffer transfer and read the byte counter 40 bits */
+    
+    err=stv0910_read_reg(demod==STV0910_DEMOD_TOP ? RSTV0910_P2_DMDMODCOD : RSTV0910_P1_DMDMODCOD, &regval);
+
+    *modcod = (regval & 0x7c) >> 2;
+    *short_frame = (regval & 0x02) >> 1;
+    *pilots = regval & 0x01;
+
+    if (err!=ERROR_NONE) printf("ERROR: STV0910 read MODCOD\n");
+
+    return err;
+}
+
+/* -------------------------------------------------------------------------------------------------- */
 uint8_t stv0910_setup_clocks() {
 /* -------------------------------------------------------------------------------------------------- */
 /* sequence is:                                                                                       */

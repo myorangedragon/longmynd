@@ -52,6 +52,9 @@
 #define STATUS_TS_NULL_PERCENTAGE 15
 #define STATUS_ES_PID             16
 #define STATUS_ES_TYPE            17
+#define STATUS_MODCOD             18
+#define STATUS_SHORT_FRAME        19
+#define STATUS_PILOTS             20
 
 /* The number of constellation peeks we do for each background loop */
 #define NUM_CONSTELLATIONS 16
@@ -102,6 +105,9 @@ typedef struct {
     char service_provider_name[255];
     uint8_t ts_null_percentage;
     uint16_t ts_elementary_streams[NUM_ELEMENT_STREAMS][2]; // { pid, type }
+    uint32_t modcod;
+    bool short_frame;
+    bool pilots;
 
     bool new;
     pthread_mutex_t mutex;
