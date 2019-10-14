@@ -235,7 +235,6 @@ uint8_t stv0910_read_dvbs2_mer(uint8_t demod, uint32_t *mer) {
     uint8_t err;
     uint8_t high, low;
 
-    /* first we trigger a buffer transfer and read the byte counter 40 bits */
                          err=stv0910_read_reg(demod==STV0910_DEMOD_TOP ? RSTV0910_P2_NOSRAMPOS : RSTV0910_P1_NOSRAMPOS, &high);
     if (err==ERROR_NONE) err=stv0910_read_reg(demod==STV0910_DEMOD_TOP ? RSTV0910_P2_NOSRAMVAL : RSTV0910_P1_NOSRAMVAL, &low);
     *mer = ((high & 0x03) << 8) | low;
@@ -255,8 +254,6 @@ uint8_t stv0910_read_modcod_and_type(uint8_t demod, uint32_t *modcod, bool *shor
 /* -------------------------------------------------------------------------------------------------- */
     uint8_t err;
     uint8_t regval;
-
-    /* first we trigger a buffer transfer and read the byte counter 40 bits */
     
     err=stv0910_read_reg(demod==STV0910_DEMOD_TOP ? RSTV0910_P2_DMDMODCOD : RSTV0910_P1_DMDMODCOD, &regval);
 
