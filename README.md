@@ -85,6 +85,56 @@ A video player (e.g. VLC) must be running to consume the output of the TS FIFO.
     15  Null Ratio          Ratio of Nulls in TS as percentage
     16  ES PID              Elementary Stream PID (repeated as pair with 17 for each ES)
     17  ES Type             Elementary Stream Type (repeated as pair with 16 for each ES)
+    18  MODCOD              Received Modulation & Coding Rate. See MODCOD Lookup Table below
+    19  Short Frames        1 if received signal is using Short Frames, 0 otherwise (DVB-S2 only)
+    20  Pilots              1 if received signal us using Pilots, 0 otherwise (DVB-S2 only)
+
+
+### MODCOD Lookup
+
+### DVB-S
+```
+4: QPSK 1/2
+5: QPSK 3/5
+6: QPSK 2/3
+7: QPSK 3/4
+9: QPSK 5/6
+10: QPSK 6/7
+11: QPSK 7/8
+```
+
+#### DVB-S2
+```
+0: DummyPL
+1: QPSK 1/4
+2: QPSK 1/3
+3: QPSK 2/5
+4: QPSK 1/2
+5: QPSK 3/5
+6: QPSK 2/3
+7: QPSK 3/4
+8: QPSK 4/5
+9: QPSK 5/6
+10: QPSK 8/9
+11: QPSK 9/10
+12: 8PSK 3/5
+13: 8PSK 2/3
+14: 8PSK 3/4
+15: 8PSK 5/6
+16: 8PSK 8/9
+17: 8PSK 9/10
+18: 16APSK 2/3
+19: 16APSK 3/4
+20: 16APSK 4/5
+21: 16APSK 5/6
+22: 16APSK 8/9
+23: 16APSK 9/10
+24: 32APSK 3/4
+25: 32APSK 4/5
+26: 32APSK 5/6
+27: 32APSK 8/9
+28: 32APSK 9/10
+```
 
 ## License
 
