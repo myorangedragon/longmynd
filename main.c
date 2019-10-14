@@ -449,6 +449,9 @@ void *loop_i2c(void *arg) {
         status->modulation_error_rate = status_cpy.modulation_error_rate;
         memcpy(status->constellation, status_cpy.constellation, (sizeof(uint8_t) * NUM_CONSTELLATIONS * 2));
         status->puncture_rate = status_cpy.puncture_rate;
+        status->modcod = status_cpy.modcod;
+        status->short_frame = status_cpy.short_frame;
+        status->pilots = status_cpy.pilots;
 
         /* Set new data flag */
         status->new = true;
