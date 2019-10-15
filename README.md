@@ -87,7 +87,7 @@ A video player (e.g. VLC) must be running to consume the output of the TS FIFO.
     17  ES Type             Elementary Stream Type (repeated as pair with 16 for each ES)
     18  MODCOD              Received Modulation & Coding Rate. See MODCOD Lookup Table below
     19  Short Frames        1 if received signal is using Short Frames, 0 otherwise (DVB-S2 only)
-    20  Pilots              1 if received signal us using Pilots, 0 otherwise (DVB-S2 only)
+    20  Pilot Symbols       1 if received signal is using Pilot Symbols, 0 otherwise (DVB-S2 only)
 
 
 ### MODCOD Lookup
