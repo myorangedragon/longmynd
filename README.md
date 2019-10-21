@@ -94,13 +94,12 @@ A video player (e.g. VLC) must be running to consume the output of the TS FIFO.
 
 ### DVB-S
 ```
-4: QPSK 1/2
-5: QPSK 3/5
-6: QPSK 2/3
-7: QPSK 3/4
-9: QPSK 5/6
-10: QPSK 6/7
-11: QPSK 7/8
+0: QPSK 1/2
+1: QPSK 2/3
+2: QPSK 3/4
+3: QPSK 5/6
+4: QPSK 6/7
+5: QPSK 7/8
 ```
 
 #### DVB-S2
