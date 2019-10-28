@@ -139,7 +139,7 @@ static int set_hwparams(
   if (! buffer_time && ! period_time) {
     //buffer_size = buffer_size_max;
     //buffer_size = buffer_size_min;
-    *buffer_size = 1024;
+    *buffer_size = 2048;
     if (! period_time)
       *buffer_size = (*buffer_size / nperiods) * nperiods;
     //printf(_("Using max buffer size %lu\n"), buffer_size);
