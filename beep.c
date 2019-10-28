@@ -270,7 +270,10 @@ void *loop_beep(void *arg) {
       double freq = 400.0;
       double phase  = 0.0;
 
-      freq = 700.0 * (exp((200+(10*thread_vars->status->modulation_error_rate))/1127.0)-1.0);
+      if(thread_vars->status->modulation_error_rate > 0 && thread_vars->status->modulation_error_rate <= 310)
+      {
+        freq = 700.0 * (exp((200+(10*thread_vars->status->modulation_error_rate))/1127.0)-1.0);
+      }
       generate_sine(frames, period_size, &phase, freq, rate, channels, (thread_vars->status->state == STATE_DEMOD_S2));
 
       /* Start playback */
@@ -291,7 +294,10 @@ void *loop_beep(void *arg) {
               }
               while (avail >= (snd_pcm_sframes_t)period_size)
               {
+                if(thread_vars->status->modulation_error_rate > 0 && thread_vars->status->modulation_error_rate <= 310)
+                {
                   freq = 700.0 * (exp((200+(10*thread_vars->status->modulation_error_rate))/1127.0)-1.0);
+                }
 
                   generate_sine(frames, period_size, &phase, freq, rate, channels, (thread_vars->status->state == STATE_DEMOD_S2));
                   while (snd_pcm_writei(handle, frames, period_size) < 0)
