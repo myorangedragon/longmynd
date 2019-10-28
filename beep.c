@@ -284,6 +284,11 @@ void *loop_beep(void *arg) {
           if(snd_pcm_wait(handle, 100))
           {
               avail = snd_pcm_avail_update(handle);
+              if(avail < 0 && avail == -32)
+              {
+                /* Handle underrun */
+                snd_pcm_prepare(handle);
+              }
               while (avail >= (snd_pcm_sframes_t)period_size)
               {
                   freq = 700.0 * (exp((200+(10*thread_vars->status->modulation_error_rate))/1127.0)-1.0);
