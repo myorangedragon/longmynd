@@ -22,6 +22,8 @@
 #ifndef STV0910_H
 #define STV0910_H
 
+#include <stdbool.h>
+
 #define DEMOD_HUNTING 0
 #define DEMOD_FOUND_HEADER 1
 #define DEMOD_S2 2
@@ -49,6 +51,7 @@ uint8_t stv0910_read_power(uint8_t, uint8_t*, uint8_t*);
 uint8_t stv0910_read_err_rate(uint8_t, uint32_t*);
 uint8_t stv0910_read_ber(uint8_t, uint32_t*);
 uint8_t stv0910_read_dvbs2_mer(uint8_t, uint32_t*);
+uint8_t stv0910_read_modcod_and_type(uint8_t, uint32_t*, bool*, bool*);
 uint8_t stv0910_init(uint32_t, uint32_t);
 uint8_t stv0910_init_regs(void);
 uint8_t stv0910_setup_timing_loop(uint8_t, uint32_t);

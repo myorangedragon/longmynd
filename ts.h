@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------------------------------- */
-/* The LongMynd receiver: udp.h                                                                      */
+/* The LongMynd receiver: ts.h                                                                      */
 /* Copyright 2019 Heather Lomond                                                                      */
 /* -------------------------------------------------------------------------------------------------- */
 /*
@@ -19,19 +19,11 @@
     along with longmynd.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef UDP_H
-#define UDP_H
+#ifndef TS_H
+#define TS_H
 
-#include <stdint.h>
-
-uint8_t udp_status_init(char *udp_ip, int udp_port);
-uint8_t udp_ts_init(char *udp_ip, int udp_port);
-
-uint8_t udp_status_write(uint8_t message, uint32_t data);
-uint8_t udp_status_string_write(uint8_t message, char *data);
-uint8_t udp_ts_write(uint8_t *buffer, uint32_t len);
-
-uint8_t udp_close(void);
+void *loop_ts(void *arg);
+void *loop_ts_parse(void *arg);
 
 #endif
 
