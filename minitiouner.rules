@@ -3,3 +3,5 @@
 
 # Minitiouner uses FT2232H/D default VID/PID, but it's own product string.
 SUBSYSTEMS=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6010", ATTRS{product}=="USB <-> NIM tuner", MODE:="0666"
+# Minitiouner Express uses different product string
+SUBSYSTEMS=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6010", ATTRS{product}=="MiniTiouner-Express", MODE:="0666"
