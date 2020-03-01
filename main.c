@@ -201,12 +201,9 @@ uint8_t process_command_line(int argc, char *argv[], longmynd_config_t *config) 
         } else if (status_ip_set && status_fifo_set) {
             err=ERROR_ARGS_INPUT;
             printf("ERROR: Cannot set Status FIFO and Status IP address\n");
-        } else if (config->ts_use_ip && config->status_use_ip) {
-            /* Check ip/port conflict */
-            if((config->ts_ip_port == config->status_ip_port) && (0==strcmp(config->ts_ip_addr, config->status_ip_addr))) {
-                err=ERROR_ARGS_INPUT;
-                printf("ERROR: Cannot set Status IP & Port identical to TS IP & Port\n");
-            }
+        } else if (config->ts_use_ip && config->status_use_ip && (config->ts_ip_port == config->status_ip_port) && (0==strcmp(config->ts_ip_addr, config->status_ip_addr))) {
+            err=ERROR_ARGS_INPUT;
+            printf("ERROR: Cannot set Status IP & Port identical to TS IP & Port\n");
         } else { /* err==ERROR_NONE */
              printf("      Status: Main Frequency=%i KHz\n",config->freq_requested);
              printf("              Main Symbol Rate=%i KSymbols/s\n",config->sr_requested);
