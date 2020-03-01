@@ -440,7 +440,7 @@ uint8_t ftdi_gpio_write(uint8_t pin_id, bool pin_value)
 /* write pin_value to the FTDI GPIO pin AC<pin_id>                                                    */
 /* -------------------------------------------------------------------------------------------------- */
 {
-    printf("Flow: GPIO Write: %d->%d\n", pin_id, (int)pin_value);
+    printf("Flow: FTDI GPIO Write: pin %d -> value %d\n", pin_id, (int)pin_value);
 
     if(pin_value)
     {
@@ -476,6 +476,31 @@ uint8_t ftdi_nim_reset(void)
 
     ftdi_gpio_write(FTDI_GPIO_PINID_NIM_RESET, 1);
     usleep(10000);
+
+    return ERROR_NONE;
+}
+
+/* -------------------------------------------------------------------------------------------------- */
+uint8_t ftdi_set_polarisation_supply(bool supply_enable, bool supply_horizontal)
+/* -------------------------------------------------------------------------------------------------- */
+/* Controls RT5047A LNB Power Supply IC, fitted to an additional board.                               */
+/* -------------------------------------------------------------------------------------------------- */
+{
+    if(supply_enable) {
+        /* Set Voltage */
+        if(supply_horizontal) {
+            ftdi_gpio_write(FTDI_GPIO_PINID_LNB_BIAS_VSEL, 1);
+        }
+        else {
+            ftdi_gpio_write(FTDI_GPIO_PINID_LNB_BIAS_VSEL, 0);
+        }
+        /* Then enable output */
+        ftdi_gpio_write(FTDI_GPIO_PINID_LNB_BIAS_ENABLE, 1);
+    }
+    else {
+        /* Disable output */
+        ftdi_gpio_write(FTDI_GPIO_PINID_LNB_BIAS_ENABLE, 0);
+    }
 
     return ERROR_NONE;
 }

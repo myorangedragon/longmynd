@@ -82,6 +82,9 @@ typedef struct {
     char status_ip_addr[16];
     int status_ip_port;
 
+    bool polarisation_supply;
+    bool polarisation_horizontal; // false -> 13V, true -> 18V
+
     bool new;
     pthread_mutex_t mutex;
 } longmynd_config_t;
