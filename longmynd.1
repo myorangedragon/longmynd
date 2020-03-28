@@ -5,7 +5,7 @@ longmynd \- Outputs transport streams from the Minitiouner DVB-S/S2 demodulator
 .B longmynd \fR[\fB\-u\fR \fIUSB_BUS USB_DEVICE\fR]
          [\fB\-i\fR \fIMAIN_IP_ADDR\fR  \fIMAIN_PORT\fR | \fB\-t\fR \fIMAIN_TS_FIFO\fR]
          [\fB\-I\fR \fISTATUS_IP_ADDR\fR  \fISTATUS_PORT\fR | \fB\-s\fR \fIMAIN_STATUS_FIFO\fR]
-         [\fB\-w\fR] [\fB\-b\fR]
+         [\fB\-w\fR] [\fB\-b\fR] [\fB\-p\fR \fIh\fR | \fB\-p\fR \fIv\fR]
       \fIMAIN_FREQ\fR \fIMAIN_SR\fR
 .IR 
 .SH DESCRIPTION
@@ -42,6 +42,11 @@ Default uses the TOP RF input for the Main TS stream.
 .BR \-b
 If selected, this option enables a tone audio output that will be present when DVB-S2 is being demodulated, and will increase in pitch for an increase in MER, to aid pointing.
 By default this option is disabled.
+.TP
+.BR \-p " " \fIh\fR " "| " "\-p " " \fIv\fR
+Controls and enables the LNB supply voltage output when an RT5047A LNB Voltage Regulator is fitted.
+"-p v" will set 13V output (Vertical Polarisation), "-p h" will set 18V output (Horizontal Polarisation).
+By default the RT5047A output is disabled.
 .TP
 .BR \fIMAIN_FREQ\fR
 specifies the starting frequency (in KHz) of the Main TS Stream search algorithm".

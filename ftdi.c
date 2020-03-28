@@ -49,12 +49,37 @@
 #define MSB_RISING_EDGE_CLOCK_BIT_IN    0x22
 #define MSB_FAILING_EDGE_CLOCK_BIT_IN   0x26
 
+/*
+FTDI GPIO Pins
+LSB
+ - AC0: NIM Reset
+ - AC1: TS2SYNC
+ - AC2: <unused>
+ - AC3: <unused>
+ - AC4: LNB Bias Enable
+ - AC5: <unused>
+ - AC6: <unused>
+ - AC7: LNB Bias Voltage Select
+MSB
+*/
+
+#define FTDI_GPIO_PINID_NIM_RESET  0
+#define FTDI_GPIO_PINID_TS2SYNC   1
+#define FTDI_GPIO_PINID_LNB_BIAS_ENABLE   4
+#define FTDI_GPIO_PINID_LNB_BIAS_VSEL   7
+
 /* -------------------------------------------------------------------------------------------------- */
 /* ----------------- GLOBALS ------------------------------------------------------------------------ */
 /* -------------------------------------------------------------------------------------------------- */
 
 static int num_bytes_to_send = 0;
 static uint8_t out_buffer[256];
+
+/* Default GPIO value 0x6f = 0b01101111 = LNB Bias Off, LNB Voltage 12V, NIM not reset */
+static uint8_t ftdi_gpio_value = 0x6f;
+
+/* Default GPIO direction 0xf1 = 0b11110001 = LNB pins, NIM Reset are outputs, TS2SYNC is input (0 for in and 1 for out) */
+static uint8_t ftdi_gpio_direction = 0xf1;
 
 /* -------------------------------------------------------------------------------------------------- */
 /* ----------------- ROUTINES ----------------------------------------------------------------------- */
@@ -410,6 +435,35 @@ uint8_t ftdi_i2c_write_reg8(uint8_t addr, uint8_t reg, uint8_t val) {
 }
 
 /* -------------------------------------------------------------------------------------------------- */
+uint8_t ftdi_gpio_write(uint8_t pin_id, bool pin_value)
+/* -------------------------------------------------------------------------------------------------- */
+/* write pin_value to the FTDI GPIO pin AC<pin_id>                                                    */
+/* -------------------------------------------------------------------------------------------------- */
+{
+    printf("Flow: FTDI GPIO Write: pin %d -> value %d\n", pin_id, (int)pin_value);
+
+    if(pin_value)
+    {
+        ftdi_gpio_value |= (1 << pin_id);
+    }
+    else
+    {
+        ftdi_gpio_value &= ~(1 << pin_id);
+    }
+
+    num_bytes_to_send = 0;
+    out_buffer[num_bytes_to_send++] = 0x82; /* aka. MPSSE_CMD_SET_DATA_BITS_HIGHBYTE */
+    out_buffer[num_bytes_to_send++] = ftdi_gpio_value;
+    out_buffer[num_bytes_to_send++] = ftdi_gpio_direction;
+
+    ftdi_usb_i2c_write(out_buffer, num_bytes_to_send);
+
+    num_bytes_to_send = 0;
+
+    return ERROR_NONE;
+}
+
+/* -------------------------------------------------------------------------------------------------- */
 uint8_t ftdi_nim_reset(void)
 /* -------------------------------------------------------------------------------------------------- */
 /* toggle the reset line on the nim                                                                    */
@@ -417,21 +471,36 @@ uint8_t ftdi_nim_reset(void)
 {
     printf("Flow: FTDI nim reset\n");
 
-    num_bytes_to_send = 0;
-
-    out_buffer[num_bytes_to_send++] = 0x82;
-    out_buffer[num_bytes_to_send++] = 0x6e; /* reset is LSB */
-    out_buffer[num_bytes_to_send++] = 0xf1;
-    ftdi_usb_i2c_write(out_buffer, num_bytes_to_send);
-    num_bytes_to_send = 0;
+    ftdi_gpio_write(FTDI_GPIO_PINID_NIM_RESET, 0);
     usleep(10000);
 
-    out_buffer[num_bytes_to_send++] = 0x82;
-    out_buffer[num_bytes_to_send++] = 0x6f;
-    out_buffer[num_bytes_to_send++] = 0xf1;
-    ftdi_usb_i2c_write(out_buffer, num_bytes_to_send);
-    num_bytes_to_send = 0;
+    ftdi_gpio_write(FTDI_GPIO_PINID_NIM_RESET, 1);
     usleep(10000);
+
+    return ERROR_NONE;
+}
+
+/* -------------------------------------------------------------------------------------------------- */
+uint8_t ftdi_set_polarisation_supply(bool supply_enable, bool supply_horizontal)
+/* -------------------------------------------------------------------------------------------------- */
+/* Controls RT5047A LNB Power Supply IC, fitted to an additional board.                               */
+/* -------------------------------------------------------------------------------------------------- */
+{
+    if(supply_enable) {
+        /* Set Voltage */
+        if(supply_horizontal) {
+            ftdi_gpio_write(FTDI_GPIO_PINID_LNB_BIAS_VSEL, 1);
+        }
+        else {
+            ftdi_gpio_write(FTDI_GPIO_PINID_LNB_BIAS_VSEL, 0);
+        }
+        /* Then enable output */
+        ftdi_gpio_write(FTDI_GPIO_PINID_LNB_BIAS_ENABLE, 1);
+    }
+    else {
+        /* Disable output */
+        ftdi_gpio_write(FTDI_GPIO_PINID_LNB_BIAS_ENABLE, 0);
+    }
 
     return ERROR_NONE;
 }

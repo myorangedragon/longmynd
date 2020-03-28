@@ -120,6 +120,8 @@ uint8_t process_command_line(int argc, char *argv[], longmynd_config_t *config) 
     strcpy(config->ts_fifo_path, "longmynd_main_ts");
     config->status_use_ip = false;
     strcpy(config->status_fifo_path, "longmynd_main_status");
+    config->polarisation_supply=false;
+    char polarisation_str[8];
 
     param=1;
     while (param<argc-2) {
@@ -149,6 +151,10 @@ uint8_t process_command_line(int argc, char *argv[], longmynd_config_t *config) 
             case 's':
                 strncpy(config->status_fifo_path, argv[param], 128);
                 status_fifo_set=true;
+                break;
+            case 'p':
+                strncpy(polarisation_str, argv[param], 8);
+                config->polarisation_supply=true;
                 break;
             case 'w':
                 config->port_swap=true;
@@ -182,6 +188,21 @@ uint8_t process_command_line(int argc, char *argv[], longmynd_config_t *config) 
         }
     }
 
+    /* Process LNB Voltage Supply parameter */
+    if (err==ERROR_NONE && config->polarisation_supply) {
+        if(0 == strcasecmp("h", polarisation_str)) {
+            config->polarisation_horizontal=true;
+        }
+        else if(0 == strcasecmp("v", polarisation_str)) {
+            config->polarisation_horizontal=false;
+        }
+        else {
+            config->polarisation_supply = false;
+            err=ERROR_ARGS_INPUT;
+            printf("ERROR: Polarisation voltage supply parameter not recognised\n");
+        }
+    }
+
     if (err==ERROR_NONE) {
         if (config->freq_requested>2450000) {
             err=ERROR_ARGS_INPUT;
@@ -201,12 +222,9 @@ uint8_t process_command_line(int argc, char *argv[], longmynd_config_t *config) 
         } else if (status_ip_set && status_fifo_set) {
             err=ERROR_ARGS_INPUT;
             printf("ERROR: Cannot set Status FIFO and Status IP address\n");
-        } else if (config->ts_use_ip && config->status_use_ip) {
-            /* Check ip/port conflict */
-            if((config->ts_ip_port == config->status_ip_port) && (0==strcmp(config->ts_ip_addr, config->status_ip_addr))) {
-                err=ERROR_ARGS_INPUT;
-                printf("ERROR: Cannot set Status IP & Port identical to TS IP & Port\n");
-            }
+        } else if (config->ts_use_ip && config->status_use_ip && (config->ts_ip_port == config->status_ip_port) && (0==strcmp(config->ts_ip_addr, config->status_ip_addr))) {
+            err=ERROR_ARGS_INPUT;
+            printf("ERROR: Cannot set Status IP & Port identical to TS IP & Port\n");
         } else { /* err==ERROR_NONE */
              printf("      Status: Main Frequency=%i KHz\n",config->freq_requested);
              printf("              Main Symbol Rate=%i KSymbols/s\n",config->sr_requested);
@@ -219,6 +237,7 @@ uint8_t process_command_line(int argc, char *argv[], longmynd_config_t *config) 
              if (config->port_swap)   printf("              NIM inputs are swapped (Main now refers to BOTTOM F-Type\n");
              else                     printf("              Main refers to TOP F-Type\n");
              if (config->beep_enabled) printf("              MER Beep enabled\n");
+             if (config->polarisation_supply) printf("              Polarisation Voltage Supply enabled: %s\n", (config->polarisation_horizontal ? "H, 18V" : "V, 13V"));
         }
     }
 
@@ -340,6 +359,9 @@ void *loop_i2c(void *arg) {
             if (*err==ERROR_NONE) *err=stvvglna_init(NIM_INPUT_BOTTOM, (config_cpy.port_swap) ? STVVGLNA_ON  : STVVGLNA_OFF, &status_cpy.lna_ok);
 
             if (*err!=ERROR_NONE) printf("ERROR: failed to init a device - is the NIM powered on?\n");
+
+            /* Enable/Disable polarisation voltage supply */
+            if (*err==ERROR_NONE) *err=ftdi_set_polarisation_supply(config_cpy.polarisation_supply, config_cpy.polarisation_horizontal);
 
             /* now start the whole thing scanning for the signal */
             if (*err==ERROR_NONE) {

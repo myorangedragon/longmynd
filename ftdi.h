@@ -23,8 +23,10 @@
 #define FTDI_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 uint8_t ftdi_init(uint8_t, uint8_t);
+uint8_t ftdi_set_polarisation_supply(bool, bool);
 uint8_t ftdi_send_byte(uint8_t);
 uint8_t ftdi_read(uint8_t*,uint8_t*);
 uint8_t ftdi_read_highbyte(uint8_t*);
