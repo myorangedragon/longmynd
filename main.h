@@ -112,7 +112,7 @@ typedef struct {
     bool short_frame;
     bool pilots;
 
-    bool new;
+    uint64_t last_updated_monotonic;
     pthread_mutex_t mutex;
     pthread_cond_t signal;
 } longmynd_status_t;
