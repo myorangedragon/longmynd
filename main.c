@@ -292,6 +292,15 @@ uint8_t do_report(longmynd_status_t *status) {
     /* BER */
     if (err==ERROR_NONE) err=stv0910_read_ber(STV0910_DEMOD_TOP, &status->bit_error_rate);
 
+    /* BCH Uncorrected Flag */
+    if (err==ERROR_NONE) err=stv0910_read_errors_bch_uncorrected(STV0910_DEMOD_TOP, &status->errors_bch_uncorrected);
+
+    /* BCH Error Count */
+    if (err==ERROR_NONE) err=stv0910_read_errors_bch_count(STV0910_DEMOD_TOP, &status->errors_bch_count);
+
+    /* LDPC Error Count */
+    if (err==ERROR_NONE) err=stv0910_read_errors_ldpc_count(STV0910_DEMOD_TOP, &status->errors_ldpc_count);
+
     /* MER */
     if(status->state==STATE_DEMOD_S2) {
         if (err==ERROR_NONE) err=stv0910_read_dvbs2_mer(STV0910_DEMOD_TOP, &status->modulation_error_rate);
@@ -469,6 +478,9 @@ void *loop_i2c(void *arg) {
         status->viterbi_error_rate = status_cpy.viterbi_error_rate;
         status->bit_error_rate = status_cpy.bit_error_rate;
         status->modulation_error_rate = status_cpy.modulation_error_rate;
+        status->errors_bch_uncorrected = status_cpy.errors_bch_uncorrected;
+        status->errors_bch_count = status_cpy.errors_bch_count;
+        status->errors_ldpc_count = status_cpy.errors_ldpc_count;
         memcpy(status->constellation, status_cpy.constellation, (sizeof(uint8_t) * NUM_CONSTELLATIONS * 2));
         status->puncture_rate = status_cpy.puncture_rate;
         status->modcod = status_cpy.modcod;
@@ -521,6 +533,12 @@ uint8_t status_all_write(longmynd_status_t *status, uint8_t (*status_write)(uint
     if (err==ERROR_NONE) err=status_write(STATUS_BER, status->bit_error_rate);
     /* MER */
     if (err==ERROR_NONE) err=status_write(STATUS_MER, status->modulation_error_rate);
+    /* BCH Uncorrected Errors Flag */
+    if (err==ERROR_NONE) err=status_write(STATUS_ERRORS_BCH_UNCORRECTED, status->errors_bch_uncorrected);
+    /* BCH Corrected Errors Count */
+    if (err==ERROR_NONE) err=status_write(STATUS_ERRORS_BCH_COUNT, status->errors_bch_count);
+    /* LDPC Corrected Errors Count */
+    if (err==ERROR_NONE) err=status_write(STATUS_ERRORS_LDPC_COUNT, status->errors_ldpc_count);
     /* Service Name */
     if (err==ERROR_NONE) err=status_string_write(STATUS_SERVICE_NAME, status->service_name);
     /* Service Provider Name */

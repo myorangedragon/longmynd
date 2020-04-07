@@ -55,6 +55,9 @@
 #define STATUS_MODCOD             18
 #define STATUS_SHORT_FRAME        19
 #define STATUS_PILOTS             20
+#define STATUS_ERRORS_LDPC_COUNT  21
+#define STATUS_ERRORS_BCH_COUNT   22
+#define STATUS_ERRORS_BCH_UNCORRECTED   23
 
 /* The number of constellation peeks we do for each background loop */
 #define NUM_CONSTELLATIONS 16
@@ -102,6 +105,9 @@ typedef struct {
     uint32_t viterbi_error_rate; // DVB-S1
     uint32_t bit_error_rate; // DVB-S2
     uint32_t modulation_error_rate; // DVB-S2
+    bool errors_bch_uncorrected;
+    uint32_t errors_bch_count;
+    uint32_t errors_ldpc_count;
     uint8_t constellation[NUM_CONSTELLATIONS][2]; // { i, q }
     uint8_t puncture_rate;
     char service_name[255];
