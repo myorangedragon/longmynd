@@ -96,6 +96,58 @@ uint64_t timestamp_ms(void) {
     return (uint64_t) tp.tv_sec * 1000 + tp.tv_nsec / 1000000;
 }
 
+void config_set_frequency(uint32_t frequency)
+{
+    if (frequency <= 2450000 && frequency >= 144000)
+    {
+        pthread_mutex_lock(&longmynd_config.mutex);
+
+        longmynd_config.freq_requested = frequency;
+        longmynd_config.new = true;
+
+        pthread_mutex_unlock(&longmynd_config.mutex);
+    }
+}
+
+void config_set_symbolrate(uint32_t symbolrate)
+{
+    if (symbolrate <= 27500 && symbolrate >= 33)
+    {
+        pthread_mutex_lock(&longmynd_config.mutex);
+
+        longmynd_config.sr_requested = symbolrate;
+        longmynd_config.new = true;
+
+        pthread_mutex_unlock(&longmynd_config.mutex);
+    }
+}
+
+void config_set_frequency_and_symbolrate(uint32_t frequency, uint32_t symbolrate)
+{
+    if (frequency <= 2450000 && frequency >= 144000
+        && symbolrate <= 27500 && symbolrate >= 33)
+    {
+        pthread_mutex_lock(&longmynd_config.mutex);
+
+        longmynd_config.freq_requested = frequency;
+        longmynd_config.sr_requested = symbolrate;
+        longmynd_config.new = true;
+
+        pthread_mutex_unlock(&longmynd_config.mutex);
+    }
+}
+
+void config_set_lnbv(bool enabled, bool horizontal)
+{
+    pthread_mutex_lock(&longmynd_config.mutex);
+
+    longmynd_config.polarisation_supply = enabled;
+    longmynd_config.polarisation_horizontal = horizontal;
+    longmynd_config.new = true;
+
+    pthread_mutex_unlock(&longmynd_config.mutex);
+}
+
 /* -------------------------------------------------------------------------------------------------- */
 uint8_t process_command_line(int argc, char *argv[], longmynd_config_t *config) {
 /* -------------------------------------------------------------------------------------------------- */
@@ -371,6 +423,10 @@ void *loop_i2c(void *arg) {
 
             /* Enable/Disable polarisation voltage supply */
             if (*err==ERROR_NONE) *err=ftdi_set_polarisation_supply(config_cpy.polarisation_supply, config_cpy.polarisation_horizontal);
+            if (*err==ERROR_NONE) {
+                status_cpy.polarisation_supply = config_cpy.polarisation_supply;
+                status_cpy.polarisation_horizontal = config_cpy.polarisation_horizontal;
+            }
 
             /* now start the whole thing scanning for the signal */
             if (*err==ERROR_NONE) {
@@ -474,6 +530,8 @@ void *loop_i2c(void *arg) {
         status->power_q = status_cpy.power_q;
         status->frequency_requested = status_cpy.frequency_requested;
         status->frequency_offset = status_cpy.frequency_offset;
+        status->polarisation_supply = status_cpy.polarisation_supply;
+        status->polarisation_horizontal = status_cpy.polarisation_horizontal;
         status->symbolrate = status_cpy.symbolrate;
         status->viterbi_error_rate = status_cpy.viterbi_error_rate;
         status->bit_error_rate = status_cpy.bit_error_rate;
@@ -525,6 +583,10 @@ uint8_t status_all_write(longmynd_status_t *status, uint8_t (*status_write)(uint
     /* carrier frequency offset we are trying */
     /* note we now have the offset, so we need to add in the freq we tried to set it to */
     if (err==ERROR_NONE) err=status_write(STATUS_CARRIER_FREQUENCY, (uint32_t)(status->frequency_requested+(status->frequency_offset/1000)));
+    /* LNB Voltage Supply Enabled: true / false */
+    if (err==ERROR_NONE) err=status_write(STATUS_LNB_SUPPLY, status->polarisation_supply);
+    /* LNB Voltage Supply is Horizontal Polarisation: true / false */
+    if (err==ERROR_NONE) err=status_write(STATUS_LNB_POLARISATION_H, status->polarisation_horizontal);
     /* symbol rate we are trying */
     if (err==ERROR_NONE) err=status_write(STATUS_SYMBOL_RATE, status->symbolrate);
     /* viterbi error rate */
