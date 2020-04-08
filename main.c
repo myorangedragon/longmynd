@@ -591,6 +591,7 @@ int main(int argc, char *argv[]) {
 
     thread_vars_t thread_vars_ts = {
         .main_err_ptr = &err,
+        .thread_err = ERROR_NONE,
         .config = &longmynd_config,
         .status = &longmynd_status
     };
@@ -606,6 +607,7 @@ int main(int argc, char *argv[]) {
 
     thread_vars_t thread_vars_ts_parse = {
         .main_err_ptr = &err,
+        .thread_err = ERROR_NONE,
         .config = &longmynd_config,
         .status = &longmynd_status
     };
@@ -621,6 +623,7 @@ int main(int argc, char *argv[]) {
 
     thread_vars_t thread_vars_i2c = {
         .main_err_ptr = &err,
+        .thread_err = ERROR_NONE,
         .config = &longmynd_config,
         .status = &longmynd_status
     };
@@ -636,6 +639,7 @@ int main(int argc, char *argv[]) {
 
     thread_vars_t thread_vars_beep = {
         .main_err_ptr = &err,
+        .thread_err = ERROR_NONE,
         .config = &longmynd_config,
         .status = &longmynd_status
     };
