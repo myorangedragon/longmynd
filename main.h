@@ -55,6 +55,11 @@
 #define STATUS_MODCOD             18
 #define STATUS_SHORT_FRAME        19
 #define STATUS_PILOTS             20
+#define STATUS_ERRORS_LDPC_COUNT  21
+#define STATUS_ERRORS_BCH_COUNT   22
+#define STATUS_ERRORS_BCH_UNCORRECTED   23
+#define STATUS_LNB_SUPPLY         24
+#define STATUS_LNB_POLARISATION_H 25
 
 /* The number of constellation peeks we do for each background loop */
 #define NUM_CONSTELLATIONS 16
@@ -98,10 +103,15 @@ typedef struct {
     uint8_t power_q;
     uint32_t frequency_requested;
     int32_t frequency_offset;
+    bool polarisation_supply;
+    bool polarisation_horizontal; // false -> 13V, true -> 18V
     uint32_t symbolrate;
     uint32_t viterbi_error_rate; // DVB-S1
     uint32_t bit_error_rate; // DVB-S2
     uint32_t modulation_error_rate; // DVB-S2
+    bool errors_bch_uncorrected;
+    uint32_t errors_bch_count;
+    uint32_t errors_ldpc_count;
     uint8_t constellation[NUM_CONSTELLATIONS][2]; // { i, q }
     uint8_t puncture_rate;
     char service_name[255];
@@ -124,6 +134,13 @@ typedef struct {
     longmynd_config_t *config;
     longmynd_status_t *status;
 } thread_vars_t;
+
+uint64_t timestamp_ms(void);
+
+void config_set_frequency(uint32_t frequency);
+void config_set_symbolrate(uint32_t symbolrate);
+void config_set_frequency_and_symbolrate(uint32_t frequency, uint32_t symbolrate);
+void config_set_lnbv(bool enabled, bool horizontal);
 
 #endif
 

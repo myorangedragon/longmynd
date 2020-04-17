@@ -88,6 +88,11 @@ A video player (e.g. VLC) must be running to consume the output of the TS FIFO.
     18  MODCOD              Received Modulation & Coding Rate. See MODCOD Lookup Table below
     19  Short Frames        1 if received signal is using Short Frames, 0 otherwise (DVB-S2 only)
     20  Pilot Symbols       1 if received signal is using Pilot Symbols, 0 otherwise (DVB-S2 only)
+    21  LDPC Error Count    LDPC Corrected Errors in last frame (DVB-S2 only)
+    22  BCH Error Count     BCH Corrected Errors in last frame (DVB-S2 only)
+    23  BCH Uncorrected     1 if some BCH-detected errors were not able to be corrected, 0 otherwise (DVB-S2 only)
+    24  LNB Voltage Enabled 1 if LNB Voltage Supply is enabled, 0 otherwise (LNB Voltage Supply requires add-on board)
+    25  LNB H Polarisation  1 if LNB Voltage Supply is configured for Horizontal Polarisation (18V), 0 otherwise (LNB Voltage Supply requires add-on board)
 
 
 ### MODCOD Lookup

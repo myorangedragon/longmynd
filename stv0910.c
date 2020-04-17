@@ -255,6 +255,81 @@ uint8_t stv0910_read_mer(uint8_t demod, uint32_t *mer) {
 }
 
 /* -------------------------------------------------------------------------------------------------- */
+uint8_t stv0910_read_errors_bch_uncorrected(uint8_t demod, bool *errors_bch_uncorrected) {
+/* -------------------------------------------------------------------------------------------------- */
+/*                    demod: STV0910_DEMOD_TOP | STV0910_DEMOD_BOTTOM: which demodulator is being read*/
+/*   errors_bch_uncorrected: place to store the result                                                */
+/*                   return: error state                                                              */
+/* -------------------------------------------------------------------------------------------------- */
+    uint8_t err;
+    uint8_t result;
+
+    /* This parameter appears to be total, not for an individual demodulator */
+    (void)demod;
+
+    err=stv0910_read_reg_field(FSTV0910_ERRORFLAG, &result);
+
+    if(result == 0) {
+        *errors_bch_uncorrected = true;
+    }
+    else {
+        *errors_bch_uncorrected = false;
+    }
+
+    if (err!=ERROR_NONE) printf("ERROR: STV0910 read BCH Errors Uncorrected\n");
+
+    return err;
+}
+
+
+/* -------------------------------------------------------------------------------------------------- */
+uint8_t stv0910_read_errors_bch_count(uint8_t demod, uint32_t *errors_bch_count) {
+/* -------------------------------------------------------------------------------------------------- */
+/*              demod: STV0910_DEMOD_TOP | STV0910_DEMOD_BOTTOM: which demodulator is being read      */
+/*   errors_bch_count: place to store the result                                                      */
+/*             return: error state                                                                    */
+/* -------------------------------------------------------------------------------------------------- */
+    uint8_t err;
+    uint8_t result;
+
+    /* This parameter appears to be total, not for an individual demodulator */
+    (void)demod;
+
+    err=stv0910_read_reg_field(FSTV0910_BCH_ERRORS_COUNTER, &result);
+
+    *errors_bch_count = (uint32_t)result;
+
+    if (err!=ERROR_NONE) printf("ERROR: STV0910 read BCH Errors Count\n");
+
+    return err;
+}
+
+
+
+/* -------------------------------------------------------------------------------------------------- */
+uint8_t stv0910_read_errors_ldpc_count(uint8_t demod, uint32_t *errors_ldpc_count) {
+/* -------------------------------------------------------------------------------------------------- */
+/*               demod: STV0910_DEMOD_TOP | STV0910_DEMOD_BOTTOM: which demodulator is being read      */
+/*   errors_ldpc_count: place to store the result                                                      */
+/*              return: error state                                                                    */
+/* -------------------------------------------------------------------------------------------------- */
+    uint8_t err;
+    uint8_t high, low;
+
+    /* This parameter appears to be total, not for an individual demodulator */
+    (void)demod;
+
+                         err=stv0910_read_reg_field(FSTV0910_LDPC_ERRORS1, &high);
+    if (err==ERROR_NONE) err=stv0910_read_reg_field(FSTV0910_LDPC_ERRORS0, &low);
+
+    *errors_ldpc_count = (uint32_t)high << 8 | (uint32_t)low;
+
+    if (err!=ERROR_NONE) printf("ERROR: STV0910 read LDPC Errors Count\n");
+
+    return err;
+}
+
+/* -------------------------------------------------------------------------------------------------- */
 uint8_t stv0910_read_modcod_and_type(uint8_t demod, uint32_t *modcod, bool *short_frame, bool *pilots) {
 /* -------------------------------------------------------------------------------------------------- */
 /*   Note that MODCODs are different in DVBS and DVBS2. Also short_frame and pilots only valid for S2 */
