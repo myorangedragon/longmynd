@@ -207,6 +207,15 @@ void *loop_ts_parse(void *arg) {
 
     longmynd_ts_parse_buffer.buffer = ts_buffer;
 
+    struct timespec ts;
+
+    /* Set pthread timer on .signal to use monotonic clock */
+    pthread_condattr_t attr;
+    pthread_condattr_init(&attr);
+    pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
+    pthread_cond_init (&longmynd_ts_parse_buffer.signal, &attr);
+    pthread_condattr_destroy(&attr);
+
     while(*err == ERROR_NONE && *thread_vars->main_err_ptr == ERROR_NONE)
     {
         //ts_pat_program_pid = 0x00; // Updated by PAT parse
@@ -218,9 +227,13 @@ void *loop_ts_parse(void *arg) {
         pthread_mutex_lock(&longmynd_ts_parse_buffer.mutex);
         longmynd_ts_parse_buffer.waiting = true;
 
-        while(longmynd_ts_parse_buffer.waiting)
+        while(longmynd_ts_parse_buffer.waiting && *thread_vars->main_err_ptr == ERROR_NONE)
         {
-            pthread_cond_wait(&longmynd_ts_parse_buffer.signal, &longmynd_ts_parse_buffer.mutex);
+            /* Set timer for 100ms */
+            clock_gettime(CLOCK_MONOTONIC, &ts);
+            ts.tv_nsec += 100 * 1000000;
+
+            pthread_cond_timedwait(&longmynd_ts_parse_buffer.signal, &longmynd_ts_parse_buffer.mutex, &ts);
         }
 
         pthread_mutex_unlock(&longmynd_ts_parse_buffer.mutex);

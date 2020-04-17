@@ -66,7 +66,7 @@ static longmynd_config_t longmynd_config = {
 static longmynd_status_t longmynd_status = {
     .service_name = "\0",
     .service_provider_name = "\0",
-    .new = false,
+    .last_updated_monotonic = 0,
     .mutex = PTHREAD_MUTEX_INITIALIZER,
     .signal = PTHREAD_COND_INITIALIZER
 };
@@ -146,6 +146,22 @@ void config_set_lnbv(bool enabled, bool horizontal)
     longmynd_config.new = true;
 
     pthread_mutex_unlock(&longmynd_config.mutex);
+}
+
+/* -------------------------------------------------------------------------------------------------- */
+uint64_t monotonic_ms(void) {
+/* -------------------------------------------------------------------------------------------------- */
+/* Returns current value of a monotonic timer in milliseconds                                         */
+/* return: monotonic timer in milliseconds                                                            */
+/* -------------------------------------------------------------------------------------------------- */
+    struct timespec tp;
+
+    if(clock_gettime(CLOCK_MONOTONIC, &tp) != 0)
+    {
+        return 0;
+    }
+
+    return (uint64_t) tp.tv_sec * 1000 + tp.tv_nsec / 1000000;
 }
 
 /* -------------------------------------------------------------------------------------------------- */
@@ -354,8 +370,8 @@ uint8_t do_report(longmynd_status_t *status) {
     if (err==ERROR_NONE) err=stv0910_read_errors_ldpc_count(STV0910_DEMOD_TOP, &status->errors_ldpc_count);
 
     /* MER */
-    if(status->state==STATE_DEMOD_S2) {
-        if (err==ERROR_NONE) err=stv0910_read_dvbs2_mer(STV0910_DEMOD_TOP, &status->modulation_error_rate);
+    if(status->state==STATE_DEMOD_S || status->state==STATE_DEMOD_S2) {
+        if (err==ERROR_NONE) err=stv0910_read_mer(STV0910_DEMOD_TOP, &status->modulation_error_rate);
     } else {
         status->modulation_error_rate = 0;
     }
@@ -545,8 +561,8 @@ void *loop_i2c(void *arg) {
         status->short_frame = status_cpy.short_frame;
         status->pilots = status_cpy.pilots;
 
-        /* Set new data flag */
-        status->new = true;
+        /* Set monotonic value to signal new data */
+        status->last_updated_monotonic = monotonic_ms();
         /* Trigger pthread signal */
         pthread_cond_signal(&status->signal);
         pthread_mutex_unlock(&status->mutex);
@@ -655,6 +671,7 @@ int main(int argc, char *argv[]) {
 
     thread_vars_t thread_vars_ts = {
         .main_err_ptr = &err,
+        .thread_err = ERROR_NONE,
         .config = &longmynd_config,
         .status = &longmynd_status
     };
@@ -670,6 +687,7 @@ int main(int argc, char *argv[]) {
 
     thread_vars_t thread_vars_ts_parse = {
         .main_err_ptr = &err,
+        .thread_err = ERROR_NONE,
         .config = &longmynd_config,
         .status = &longmynd_status
     };
@@ -685,6 +703,7 @@ int main(int argc, char *argv[]) {
 
     thread_vars_t thread_vars_i2c = {
         .main_err_ptr = &err,
+        .thread_err = ERROR_NONE,
         .config = &longmynd_config,
         .status = &longmynd_status
     };
@@ -700,6 +719,7 @@ int main(int argc, char *argv[]) {
 
     thread_vars_t thread_vars_beep = {
         .main_err_ptr = &err,
+        .thread_err = ERROR_NONE,
         .config = &longmynd_config,
         .status = &longmynd_status
     };
@@ -713,21 +733,24 @@ int main(int argc, char *argv[]) {
         pthread_setname_np(thread_beep, "Beep Audio");
     }
 
+    uint64_t last_status_sent_monotonic = 0;
     longmynd_status_t longmynd_status_cpy;
 
     while (err==ERROR_NONE) {
         /* Test if new status data is available */
-        if(longmynd_status.new) {
-            /* Acquire lock on status struct */
+        if(longmynd_status.last_updated_monotonic != last_status_sent_monotonic) {
+            /* Acquire lock on global status struct */
             pthread_mutex_lock(&longmynd_status.mutex);
             /* Clone status struct locally */
             memcpy(&longmynd_status_cpy, &longmynd_status, sizeof(longmynd_status_t));
-            /* Clear new flag on status struct */
-            longmynd_status.new = false;
+            /* Release lock on global status struct */
             pthread_mutex_unlock(&longmynd_status.mutex);
 
             /* Send all status via configured output interface from local copy */
             err=status_all_write(&longmynd_status_cpy, status_write, status_string_write);
+
+            /* Update monotonic timestamp last sent */
+            last_status_sent_monotonic = longmynd_status_cpy.last_updated_monotonic;
         } else {
             /* Sleep 10ms */
             usleep(10*1000);
