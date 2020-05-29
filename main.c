@@ -207,7 +207,7 @@ uint8_t process_command_line(int argc, char *argv[], longmynd_config_t *config) 
                 ts_ip_set = true;
                 break;
             case 't':
-                strncpy(config->status_fifo_path, argv[param], 128);
+                strncpy(config->ts_fifo_path, argv[param], 128);
                 ts_fifo_set=true;
                 break;
             case 'I':
