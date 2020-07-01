@@ -109,10 +109,10 @@ void *loop_ts(void *arg) {
         if ((*err==ERROR_NONE) && (len>2)) {
             ts_write(&buffer[2],len-2);
 
-            if(longmynd_ts_parse_buffer.waiting && longmynd_ts_parse_buffer.buffer != NULL)
-            {                
-                pthread_mutex_lock(&longmynd_ts_parse_buffer.mutex);
-
+            if(longmynd_ts_parse_buffer.waiting
+            	&& longmynd_ts_parse_buffer.buffer != NULL
+            	&& pthread_mutex_trylock(&longmynd_ts_parse_buffer.mutex) == 0)
+            {
                 memcpy(longmynd_ts_parse_buffer.buffer, &buffer[2],len-2);
                 longmynd_ts_parse_buffer.length = len-2;
                 pthread_cond_signal(&longmynd_ts_parse_buffer.signal);
